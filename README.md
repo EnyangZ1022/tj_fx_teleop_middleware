@@ -1,23 +1,17 @@
-<<<<<<< HEAD
-# Dual-Arm Teleop Middleware
+# tj_fx_teleop_middleware
 
 A lightweight MVP middleware for Pico-based teleoperation of a fixed-base dual-arm robot.
 
-The project focuses on:
+## Overview
 
-- Pico input parsing
-- Teleoperation frame abstraction
-- Coordinate calibration
-- Safety state management
-- Filtering and rate limiting
-- Robot SDK command forwarding
-- Real-time visualization
-- Logging and replay
+This repository focuses on turning Pico motion/controller input into clean internal data structures that can be consumed by later teleoperation stages.
 
-## Current Status
+## Architecture (MVP)
 
-Initial repository structure.
-=======
-# tj_fx_teleop_middleware
-A simplified middleware for tj_fx dual arm robot teleoperation. 
->>>>>>> 69beff06939a5d3467d86cef5aae8cd6defb650f
+Pico input -> TeleopFrame -> coordinate transform -> filtering/safety -> robot SDK adapter
+
+Prompt 1 only covers the Pico input refactor and parser testability.
+
+## Pico Interface Notes
+
+See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.

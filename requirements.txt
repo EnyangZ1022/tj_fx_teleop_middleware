@@ -3,3 +3,4 @@ scipy
 pyyaml
 pyqtgraph
 pyside6
+pytest

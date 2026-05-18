@@ -1,0 +1,30 @@
+expected_frame_rate_hz: 95
+tcp_port: 63901
+udp_bcast_port: 29888
+
+pose:
+  format: [x, y, z, qx, qy, qz, qw]
+  unit: meter
+
+quaternion:
+  convention: local_to_world
+
+coordinate_system:
+  reported_axes: "+X right, +Y up, +Z forward"
+  note: "Double-check against OpenXR common convention (+X right, +Y up, -Z forward)."
+  z_axis_confirmation_pending: true
+
+tracking:
+  lost_pose_behavior: "controller pose may become all zeros"
+  zero_pose_is_invalid: true
+  invalid_pose_to_robot_control: forbidden
+
+enable_mapping:
+  deadman:
+    signal: grip
+    threshold: 0.8
+
+gripper_mapping:
+  signal: trigger
+  formula: "gripper_position = 1.0 - trigger"
+  deadband: 0.01
