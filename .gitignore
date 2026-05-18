@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Conda / virtual env
+.venv/
+env/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Logs and data
+logs/
+data/
+*.log
+*.csv
+*.jsonl
+
+# Local/private configs
+configs/*.local.yaml
+configs/*_local.yaml
+
+# Robot / customer private info
+*.sn
+*.key
+*.pem
