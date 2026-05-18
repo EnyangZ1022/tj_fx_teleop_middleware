@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import socket
 import struct
 import threading
@@ -32,6 +33,8 @@ TAIL_SZ = TAIL_FMT.size
 OnFrameCallback = Callable[[PicoRawFrame], None]
 OnStateJsonCallback = Callable[[str, str], None]
 
+LOGGER = logging.getLogger(__name__)
+
 
 def local_ipv4() -> list[str]:
     """Get non-loopback local IPv4 addresses for UDP broadcast."""
@@ -44,7 +47,7 @@ def local_ipv4() -> list[str]:
             if not ip.startswith("127."):
                 ips.append(ip)
     except Exception:
-        pass
+        LOGGER.debug("Failed to resolve host IPv4 addresses", exc_info=True)
 
     if not ips:
         try:
@@ -53,7 +56,7 @@ def local_ipv4() -> list[str]:
             ips.append(sock.getsockname()[0])
             sock.close()
         except Exception:
-            pass
+            LOGGER.debug("Failed to get fallback outbound IPv4", exc_info=True)
 
     return ips
 
@@ -150,6 +153,7 @@ def parse_state_json(
             right_ctrl=_parse_controller(right_json if isinstance(right_json, dict) else {}),
         )
     except Exception:
+        LOGGER.debug("Failed to parse CMD_STATE_JSON payload", exc_info=True)
         return None
 
 
@@ -189,12 +193,12 @@ class PicoStreamParser:
                 for one_byte in chunk:
                     self._feed(one_byte)
         except Exception:
-            pass
+            LOGGER.debug("TCP parser loop exited with error from %s", self.addr, exc_info=True)
         finally:
             try:
                 self.conn.close()
             except Exception:
-                pass
+                LOGGER.debug("Failed to close TCP client socket", exc_info=True)
 
     def _feed(self, one_byte: int) -> None:
         self.buf.append(one_byte)
@@ -229,6 +233,7 @@ class PicoStreamParser:
         if self.hdr_cmd == CMD_CONNECT:
             msg = payload.decode(errors="replace")
             self.dev_id = msg.split("|")[0]
+            LOGGER.info("Pico device connected: %s", self.dev_id or "<unknown>")
 
         elif self.hdr_cmd == CMD_HEARTBEAT:
             return
@@ -241,11 +246,14 @@ class PicoStreamParser:
 
 
 def handle_client(conn: socket.socket, addr: tuple[str, int], on_state_json: OnStateJsonCallback) -> None:
+    LOGGER.info("TCP client connected from %s:%s", addr[0], addr[1])
     parser = PicoStreamParser(conn, addr, on_state_json)
     parser.run()
+    LOGGER.info("TCP client disconnected from %s:%s", addr[0], addr[1])
 
 
 def tcp_server_loop(stop_event: threading.Event, on_state_json: OnStateJsonCallback) -> None:
+    LOGGER.info("Starting TCP server on port %d", TCP_PORT)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     if hasattr(socket, "SO_REUSEPORT"):
@@ -274,10 +282,12 @@ def tcp_server_loop(stop_event: threading.Event, on_state_json: OnStateJsonCallb
         try:
             srv.close()
         except Exception:
-            pass
+            LOGGER.debug("Failed to close TCP server socket", exc_info=True)
+        LOGGER.info("TCP server stopped")
 
 
 def udp_broadcast_loop(stop_event: threading.Event) -> None:
+    LOGGER.info("Starting UDP broadcaster on port %d", UDP_BCAST_PORT)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.settimeout(0.1)
@@ -291,7 +301,7 @@ def udp_broadcast_loop(stop_event: threading.Event) -> None:
                 try:
                     sock.sendto(msg, (bcast, UDP_BCAST_PORT))
                 except Exception:
-                    pass
+                    LOGGER.debug("UDP broadcast send failed to %s", bcast, exc_info=True)
 
             for _ in range(50):
                 if stop_event.is_set():
@@ -301,7 +311,8 @@ def udp_broadcast_loop(stop_event: threading.Event) -> None:
         try:
             sock.close()
         except Exception:
-            pass
+            LOGGER.debug("Failed to close UDP broadcast socket", exc_info=True)
+        LOGGER.info("UDP broadcaster stopped")
 
 
 class PicoReceiver:
@@ -334,6 +345,8 @@ class PicoReceiver:
             self._threads = [udp_thread, tcp_thread]
             self._running = True
 
+        LOGGER.info("PicoReceiver starting")
+
         for thread in self._threads:
             thread.start()
 
@@ -346,8 +359,12 @@ class PicoReceiver:
             self._threads = []
             self._running = False
 
+        LOGGER.info("PicoReceiver stopping")
+
         for thread in threads:
             thread.join(timeout=1.5)
+
+        LOGGER.info("PicoReceiver stopped")
 
     def get_latest_frame(self) -> PicoRawFrame | None:
         with self._lock:
@@ -374,7 +391,7 @@ class PicoReceiver:
             try:
                 callback(frame)
             except Exception:
-                pass
+                LOGGER.exception("PicoReceiver on_frame callback failed")
 
 
 __all__ = [
