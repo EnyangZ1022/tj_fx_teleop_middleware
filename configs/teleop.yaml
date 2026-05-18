@@ -1,0 +1,23 @@
+input:
+  source: pico
+  expected_input_rate_hz: 95
+
+timing:
+  proposed_command_loop_rate_hz: 100
+  fallback_command_loop_rate_hz: 50
+  note: "Command loop rate should divide the 1000 Hz robot controller internal loop."
+
+mapping:
+  enable:
+    field: grip
+    threshold: 0.8
+    mode: hold
+  gripper:
+    field: trigger
+    formula: "1.0 - trigger"
+    deadband: 0.01
+
+reserved_buttons:
+  primaryButton: start_pause
+  secondaryButton: cancel_reset
+  menuButton: calibration_alignment
