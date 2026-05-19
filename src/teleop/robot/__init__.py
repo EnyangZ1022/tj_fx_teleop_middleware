@@ -1,3 +1,6 @@
+from teleop.robot.command_adapter import RobotCommandAdapter
+from teleop.robot.command_config import RobotCommandConfig
+from teleop.robot.ik_adapter import ArmIKAdapter
 from teleop.robot.kinematics_adapter import ArmKinematicsAdapter, sdk_arm_to_index
 from teleop.robot.sdk_adapter import RobotSDKReadOnlyAdapter
 from teleop.robot.sdk_config import RobotSDKConfig
@@ -15,9 +18,12 @@ from teleop.robot.startup_config import RobotStartupConfig
 
 __all__ = [
     "RobotSDKConfig",
+    "RobotCommandConfig",
     "sdk_arm_to_index",
     "ArmKinematicsAdapter",
+    "ArmIKAdapter",
     "RobotSDKReadOnlyAdapter",
+    "RobotCommandAdapter",
     "RobotStartupConfig",
     "max_joint_abs_error_deg",
     "send_joint_command",

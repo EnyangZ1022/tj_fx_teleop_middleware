@@ -24,6 +24,8 @@ Stage 6A adds a read-only robot SDK adapter that connects, checks feedback strea
 
 Stage 6B-pre adds a safe startup-ready-pose module that moves both arms to configured low-speed joint ready positions and then stops (not teleoperation).
 
+Stage 6B adds a minimal robot command adapter that consumes scheduled DualArmCommandTarget, solves IK, and sends joint commands with strict safety guards.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -52,6 +54,10 @@ See `docs/robot_sdk_readonly_notes.md` for Stage 6A robot connection flow, feedb
 
 See `docs/robot_startup_ready_pose_notes.md` for Stage 6B-pre startup scope, ready-pose safety policy, and run checklist.
 
+## Robot Command Adapter Notes
+
+See `docs/robot_command_adapter_notes.md` for Stage 6B command adapter flow, fixed IK reference policy, and send safety limits.
+
 ## Validation
 
 Run the following checks:
@@ -65,6 +71,18 @@ Manual hardware startup command (only when safe):
 
 ```bash
 python scripts/move_robot_to_ready_pose.py --robot-ip 192.168.1.190
+```
+
+Manual dry-run command adapter check (default safe mode):
+
+```bash
+python scripts/robot_command_dry_run.py --robot-ip 192.168.1.190 --dry-run
+```
+
+Manual real send (only after ready pose and operator confirmation):
+
+```bash
+python scripts/robot_command_dry_run.py --robot-ip 192.168.1.190 --enable-send --delta-mm 2
 ```
 
 PICO 4 Ultra hardware validation notes:

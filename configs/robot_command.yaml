@@ -1,0 +1,22 @@
+robot_command:
+  dry_run: true
+  command_enabled: false
+  control_mode: "joint_position"
+  ctrl_hz: 100
+
+  limits:
+    max_joint_step_deg: 5.0
+    max_joint_velocity_deg_s: 90.0
+
+  arms:
+    send_left: true
+    send_right: true
+
+  joint_impedance:
+    vel_ratio: 20
+    acc_ratio: 20
+    joint_k: [12, 12, 12, 12, 12, 12, 12]
+    joint_d: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
+
+  # Default must be dry-run and command disabled.
+  # Manual operator action is required before real send.
