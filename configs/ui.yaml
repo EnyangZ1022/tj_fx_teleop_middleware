@@ -1,0 +1,13 @@
+ui:
+  enabled: false
+  update_hz: 20.0
+  window_title: "TJ-FX Teleop Diagnostic UI"
+
+  view:
+    show_3d_view: true
+    show_status_panel: true
+    show_error_lines: true
+    axis_length_mm: 100.0
+    ball_size: 10.0
+    history_length: 200
+    coordinate_unit: "mm"

@@ -30,6 +30,8 @@ Stage 6C adds integration validation checks, upstream XRoboToolkit alignment aud
 
 Stage 7 adds optional asynchronous logging/recording/replay diagnostics infrastructure with non-blocking queue-based writing and disabled-by-default safety settings.
 
+Stage 8 adds an optional PySide6 + PyQtGraph diagnostic UI that visualizes dual-arm target/feedback/error/status at a default 20 Hz refresh using a latest-snapshot model.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -74,6 +76,10 @@ See `docs/stage6c_integration_checklist.md` for Stage 6C integration verificatio
 
 See `docs/logging_replay_notes.md` for Stage 7 optional logging architecture, performance-safety policy, and replay scope.
 
+## UI Visualization Notes
+
+See `docs/ui_visualization_notes.md` for Stage 8 diagnostic UI scope, refresh policy, and run commands.
+
 ## Validation
 
 Run the following checks:
@@ -116,11 +122,24 @@ python scripts/analyze_teleop_log.py --input <jsonl>
 python scripts/replay_teleop_log.py --input <jsonl>
 ```
 
+Manual Stage 8 UI diagnostics:
+
+```bash
+python scripts/run_teleop_ui_mock.py
+python scripts/run_teleop_ui_from_log.py --input <jsonl>
+```
+
 Stage 7 logging defaults are safe by design:
 
 - logging is disabled by default
 - frame/performance recording is disabled by default
 - logging must remain optional and non-blocking
+
+Stage 8 UI defaults are safe by design:
+
+- UI is disabled by default in config
+- UI is diagnostic-only and does not send robot commands
+- UI refresh defaults to 20 Hz (50 ms timer)
 
 PICO 4 Ultra hardware validation notes:
 
