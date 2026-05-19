@@ -12,7 +12,10 @@ from teleop.transform.calibration import DualArmCalibrationState
 
 
 class TargetSafetyGate:
-    """Gate Stage 3 robot targets with Stage 4 safety checks."""
+    """Gate Stage 3 robot targets with Stage 4 safety checks.
+
+    Target positions are interpreted as robot-side millimeters and velocity limits as mm/s.
+    """
 
     def __init__(self, config: SafetyConfig | None = None):
         self._config = config if config is not None else SafetyConfig()
@@ -308,7 +311,7 @@ class TargetSafetyGate:
             return False
 
         dist = _distance(prev.position_xyz, target.position_xyz)
-        return dist > float(self._config.max_single_step_m)
+        return dist > float(self._config.max_single_step_mm)
 
     def _exceeds_velocity_limit(self, side: str, target: RobotArmTarget, now_ns: int) -> bool:
         if self._last_safe_target is None:
@@ -329,7 +332,7 @@ class TargetSafetyGate:
         dt_s = dt_ns / 1_000_000_000.0
         dist = _distance(prev.position_xyz, target.position_xyz)
         velocity = dist / dt_s
-        return velocity > float(self._config.max_velocity_mps)
+        return velocity > float(self._config.max_velocity_mm_s)
 
     def _is_pico_stale(self, frame: TeleopFrame, now_ns: int) -> bool:
         timeout_ns = int(float(self._config.pico_timeout_ms) * 1_000_000.0)

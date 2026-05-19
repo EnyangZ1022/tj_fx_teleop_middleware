@@ -18,7 +18,10 @@ Stage 2 introduces a semantic mapping layer that converts Pico transport-level i
   - `primaryButton`: start / pause request
   - `secondaryButton`: cancel / reset request
   - `axisClick`: preferred calibration request trigger (rising edge)
-  - `menuButton`: legacy/optional calibration mapping (not preferred for MVP)
+  - `menuButton`: unused in MVP (not safety-critical)
+
+Calibration request is detected in orchestration via axisClick rising edge between previous/current frames.
+Direct TeleopFrame mapping should not treat menuButton as calibration request.
 
 `axisX` and `axisY` are carried through for future usage. Stage 2 does not implement joystick behavior.
 

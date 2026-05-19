@@ -73,7 +73,7 @@ Quaternion: local-to-world, according to customer confirmation.
 - `primaryButton` reserved for start / pause.
 - `secondaryButton` reserved for cancel / reset.
 - `axisClick` preferred for calibration request (rising edge detection).
-- `menuButton` kept only as legacy/optional calibration input and should not be used for MVP by default.
+- `menuButton` is unused in MVP calibration flow and not safety-critical.
 
 ## 8. Out-of-scope for Prompt 1
 

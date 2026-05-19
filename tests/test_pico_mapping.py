@@ -130,4 +130,30 @@ def test_axis_click_and_reserved_button_requests() -> None:
     assert mapped.right.axis_click is False
     assert mapped.start_pause_requested is True
     assert mapped.cancel_requested is True
-    assert mapped.calibration_requested is True
+    assert mapped.calibration_requested is False
+
+
+def test_menu_button_does_not_trigger_calibration_request() -> None:
+    mapper = PicoInputMapper()
+    frame = make_frame(
+        left_ctrl=make_ctrl(menu_button=True),
+        right_ctrl=make_ctrl(menu_button=True),
+    )
+
+    mapped = mapper.map_frame(frame)
+
+    assert mapped.calibration_requested is False
+
+
+def test_axis_click_is_preserved_for_rising_edge_helper() -> None:
+    mapper = PicoInputMapper()
+    frame = make_frame(
+        left_ctrl=make_ctrl(axis_click=True),
+        right_ctrl=make_ctrl(axis_click=False),
+    )
+
+    mapped = mapper.map_frame(frame)
+
+    assert mapped.left.axis_click is True
+    assert mapped.right.axis_click is False
+    assert mapped.calibration_requested is False

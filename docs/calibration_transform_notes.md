@@ -120,6 +120,7 @@ Input naming in this project remains:
 - `grip`: deadman/enable
 - `trigger`: gripper control
 - `axisClick`: calibration request
+- `menuButton`: unused in MVP calibration flow
 
 See also:
 

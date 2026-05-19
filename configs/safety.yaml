@@ -6,8 +6,8 @@ safety:
     off_threshold: 0.65
     mode: hold
   target:
-    max_single_step_m: 0.05
-    max_velocity_mps: 0.5
+    max_single_step_mm: 50.0
+    max_velocity_mm_s: 500.0
   calibration:
     require_both_arms_calibrated: false
   operation:

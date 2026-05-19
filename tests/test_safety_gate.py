@@ -253,8 +253,33 @@ def test_require_both_arms_calibrated_blocks_motion() -> None:
     assert decision.global_reason == "missing_calibration"
 
 
+def test_small_target_step_within_limit_stays_active() -> None:
+    gate = TargetSafetyGate(SafetyConfig(max_single_step_mm=50.0, max_velocity_mm_s=10_000.0))
+    frame = _teleop_frame(pc_receive_time_ns=1_000_000_000)
+    calibration = _calibration()
+
+    decision_ok = gate.evaluate(
+        frame,
+        _target(left=_arm_target(0.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+        calibration,
+        now_ns=1_000_000_100,
+    )
+    assert decision_ok.allow_motion is True
+
+    # 10 mm step must pass when max_single_step_mm is 50 mm.
+    decision_small_step = gate.evaluate(
+        frame,
+        _target(left=_arm_target(10.0, 0.0, 0.0), right=_arm_target(10.0, 0.0, 0.0)),
+        calibration,
+        now_ns=1_100_000_100,
+    )
+
+    assert decision_small_step.state == SafetyState.TELEOP_ACTIVE
+    assert decision_small_step.allow_motion is True
+
+
 def test_target_jump_enters_paused_and_blocks_motion() -> None:
-    gate = TargetSafetyGate(SafetyConfig(max_single_step_m=0.05, max_velocity_mps=10.0))
+    gate = TargetSafetyGate(SafetyConfig(max_single_step_mm=50.0, max_velocity_mm_s=10_000.0))
     frame = _teleop_frame(pc_receive_time_ns=1_000_000_000)
     calibration = _calibration()
 
@@ -268,7 +293,8 @@ def test_target_jump_enters_paused_and_blocks_motion() -> None:
 
     decision_jump = gate.evaluate(
         frame,
-        _target(left=_arm_target(0.2, 0.0, 0.0), right=_arm_target(0.2, 0.0, 0.0)),
+        # 100 mm jump must exceed the 50 mm single-step limit.
+        _target(left=_arm_target(100.0, 0.0, 0.0), right=_arm_target(100.0, 0.0, 0.0)),
         calibration,
         now_ns=1_100_000_100,
     )
@@ -280,7 +306,7 @@ def test_target_jump_enters_paused_and_blocks_motion() -> None:
 
 
 def test_velocity_limit_enters_paused_and_blocks_motion() -> None:
-    gate = TargetSafetyGate(SafetyConfig(max_single_step_m=1.0, max_velocity_mps=0.2))
+    gate = TargetSafetyGate(SafetyConfig(max_single_step_mm=1_000.0, max_velocity_mm_s=200.0))
     frame = _teleop_frame(pc_receive_time_ns=1_000_000_000)
     calibration = _calibration()
 
@@ -294,7 +320,8 @@ def test_velocity_limit_enters_paused_and_blocks_motion() -> None:
 
     decision_fast = gate.evaluate(
         frame,
-        _target(left=_arm_target(0.06, 0.0, 0.0), right=_arm_target(0.06, 0.0, 0.0)),
+        # 60 mm in 0.05 s = 1200 mm/s, above 200 mm/s limit.
+        _target(left=_arm_target(60.0, 0.0, 0.0), right=_arm_target(60.0, 0.0, 0.0)),
         calibration,
         now_ns=1_050_000_100,
     )

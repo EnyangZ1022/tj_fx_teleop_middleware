@@ -48,6 +48,13 @@ Stage 3 can generate position-only robot targets. Before any future SDK command 
 - `grip` is the deadman switch input.
 - `axisClick` is intended for calibration request trigger, not for enable.
 
+## Unit conventions
+
+- Pico pose remains in meters before coordinate transform.
+- Safety gate target position checks use robot-side millimeters.
+- Safety velocity checks use mm/s.
+- RobotTarget and CommandTarget use mm (xyz) and deg (abc/q).
+
 ## Stage boundary
 
 Stage 4 does not send commands to the robot. It only evaluates safety and returns `SafetyDecision`.

@@ -7,6 +7,7 @@
 - [ ] Head pose is not required for control logic.
 - [ ] Coordinate convention is documented from measured data.
 - [ ] Button mapping is documented and consistent.
+- [ ] axisClick is calibration trigger and menuButton is unused in MVP.
 
 ## B. Reference-Relative Control
 
@@ -28,8 +29,11 @@
 ## D. Unit Convention
 
 - [ ] PICO meter to robot millimeter conversion is checked.
+- [ ] Safety target step limit uses millimeters.
+- [ ] Safety target velocity limit uses mm/s.
 - [ ] FK xyz feedback is interpreted as millimeter.
 - [ ] IK xyz input is millimeter.
+- [ ] RobotTarget and CommandTarget use mm/deg naming.
 - [ ] abc orientation uses degree.
 - [ ] q joint values use degree.
 - [ ] limits use mm/s or deg/s as appropriate.

@@ -50,6 +50,7 @@ This means:
 - grip: enable/deadman
 - trigger: gripper control
 - axisClick: calibration request / optional manual recalibration
+- menuButton: unused in MVP (not safety-critical)
 - primaryButton: start/confirm candidate
 - secondaryButton: pause/cancel candidate
 

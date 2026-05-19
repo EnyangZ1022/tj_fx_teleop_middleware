@@ -21,8 +21,8 @@ reserved_buttons:
   primaryButton: start_pause
   secondaryButton: cancel_reset
   axisClick: calibration_request_preferred
-  menuButton: calibration_alignment_legacy_optional
-  note: "MVP prefers axisClick rising edge for calibration requests; menuButton should remain unused unless explicitly enabled."
+  menuButton: unused_in_mvp
+  note: "MVP calibration uses axisClick rising edge; menuButton is unused and not safety-critical."
 
 coordinate_transform:
   pico_frame:
@@ -65,8 +65,8 @@ safety_gate:
     off_threshold: 0.65
     note: "Stage 4 currently uses on_threshold for simple hold-to-enable logic; hysteresis can be added later."
   limits:
-    max_single_step_m: 0.05
-    max_velocity_mps: 0.5
+    max_single_step_mm: 50.0
+    max_velocity_mm_s: 500.0
   policy:
     allow_single_arm_motion: true
     require_both_arms_calibrated: false

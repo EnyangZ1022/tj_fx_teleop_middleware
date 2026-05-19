@@ -39,7 +39,9 @@ class PicoInputMapper:
         # Stage 2 policy: each reserved button is exposed as a simple ORed request.
         start_pause_requested = bool(frame.left_ctrl.primary_button or frame.right_ctrl.primary_button)
         cancel_requested = bool(frame.left_ctrl.secondary_button or frame.right_ctrl.secondary_button)
-        calibration_requested = bool(frame.left_ctrl.menu_button or frame.right_ctrl.menu_button)
+        # Stage 9 policy: calibration request is handled by axisClick rising-edge detection
+        # in orchestration using detect_axis_click_calibration_request(previous, current, side).
+        calibration_requested = False
 
         return TeleopFrame(
             frame_id=frame.frame_id,

@@ -32,6 +32,8 @@ Stage 7 adds optional asynchronous logging/recording/replay diagnostics infrastr
 
 Stage 8 adds an optional PySide6 + PyQtGraph diagnostic UI that visualizes dual-arm target/feedback/error/status at a default 20 Hz refresh using a latest-snapshot model.
 
+Stage 9 fixes integration semantics (safety units in mm/mm_s and axisClick rising-edge calibration trigger) and adds the full orchestration entrypoint that connects all stages with safe dry-run defaults.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -79,6 +81,10 @@ See `docs/logging_replay_notes.md` for Stage 7 optional logging architecture, pe
 ## UI Visualization Notes
 
 See `docs/ui_visualization_notes.md` for Stage 8 diagnostic UI scope, refresh policy, and run commands.
+
+## Full Teleop App Notes
+
+See `docs/full_teleop_app_notes.md` for Stage 9 orchestration flow, runtime safety defaults, and full app launch commands.
 
 ## Validation
 
@@ -129,6 +135,19 @@ python scripts/run_teleop_ui_mock.py
 python scripts/run_teleop_ui_from_log.py --input <jsonl>
 ```
 
+Manual Stage 9 full app commands:
+
+```bash
+# Pico only, no robot
+python scripts/run_full_teleop.py --no-robot --dry-run --ui
+
+# Robot feedback plus dry-run command path
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui
+
+# Real send only after staged checks and on-site safety confirmation
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui
+```
+
 Stage 7 logging defaults are safe by design:
 
 - logging is disabled by default
@@ -140,6 +159,14 @@ Stage 8 UI defaults are safe by design:
 - UI is disabled by default in config
 - UI is diagnostic-only and does not send robot commands
 - UI refresh defaults to 20 Hz (50 ms timer)
+
+Stage 9 full-app defaults are safe by design:
+
+- dry_run is true by default
+- enable_send is false by default
+- logging is disabled by default
+- calibration trigger uses axisClick rising edge (menuButton unused in MVP)
+- real robot command send requires explicit `--enable-send --confirm` and typing `YES`
 
 PICO 4 Ultra hardware validation notes:
 
