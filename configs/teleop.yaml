@@ -20,4 +20,40 @@ mapping:
 reserved_buttons:
   primaryButton: start_pause
   secondaryButton: cancel_reset
-  menuButton: calibration_alignment
+  axisClick: calibration_request_preferred
+  menuButton: calibration_alignment_legacy_optional
+  note: "MVP prefers axisClick rising edge for calibration requests; menuButton should remain unused unless explicitly enabled."
+
+coordinate_transform:
+  pico_frame:
+    x: user_right
+    y: user_up
+    z: user_forward
+    unit: meter
+
+  user_frame_calibration:
+    enabled: true
+    default_r_user_from_pico: identity
+    note: "Future work may estimate this matrix from user forward/right calibration motions."
+
+  arm_mapping:
+    right:
+      sdk_frame:
+        x: forward
+        y: up
+        z: right
+      axis_matrix_from_user:
+        - [0, 0, 1]
+        - [0, 1, 0]
+        - [1, 0, 0]
+      scale: 1.0
+    left:
+      sdk_frame:
+        x: forward
+        y: down
+        z: left
+      axis_matrix_from_user:
+        - [0, 0, 1]
+        - [0, -1, 0]
+        - [-1, 0, 0]
+      scale: 1.0

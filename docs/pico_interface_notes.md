@@ -72,7 +72,8 @@ Quaternion: local-to-world, according to customer confirmation.
 - Gripper command deadband = 0.01.
 - `primaryButton` reserved for start / pause.
 - `secondaryButton` reserved for cancel / reset.
-- `menuButton` reserved for calibration / alignment.
+- `axisClick` preferred for calibration request (rising edge detection).
+- `menuButton` kept only as legacy/optional calibration input and should not be used for MVP by default.
 
 ## 8. Out-of-scope for Prompt 1
 

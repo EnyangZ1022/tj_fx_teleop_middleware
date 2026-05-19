@@ -17,9 +17,10 @@ Stage 2 introduces a semantic mapping layer that converts Pico transport-level i
 - Reserved button semantics:
   - `primaryButton`: start / pause request
   - `secondaryButton`: cancel / reset request
-  - `menuButton`: calibration / alignment request
+  - `axisClick`: preferred calibration request trigger (rising edge)
+  - `menuButton`: legacy/optional calibration mapping (not preferred for MVP)
 
-`axisX`, `axisY`, and `axisClick` are carried through for future usage. Stage 2 does not implement joystick behavior.
+`axisX` and `axisY` are carried through for future usage. Stage 2 does not implement joystick behavior.
 
 ## Validity Rule
 
