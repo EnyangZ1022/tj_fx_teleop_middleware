@@ -7,6 +7,7 @@ import numpy as np
 
 from teleop.core.robot_frame import DualArmRobotFeedback, DualArmRobotTarget, RobotArmTarget
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
+from teleop.core.units import position_m_to_mm
 from teleop.transform.calibration import ArmCalibrationAnchor, DualArmCalibrationState, IDENTITY_MATRIX_3X3
 
 
@@ -32,6 +33,11 @@ class PositionOnlyCoordinateTransformer:
 
     Policy for missing calibration:
     - If an arm is not calibrated, that arm target is returned as None.
+
+    Units:
+    - Pico pose and delta_pico are in meters.
+    - Robot anchors and robot targets are in millimeters.
+    - Robot orientation is in degrees and remains frozen at calibration.
     """
 
     def __init__(
@@ -195,9 +201,10 @@ class PositionOnlyCoordinateTransformer:
 
         delta_pico = curr_pico_xyz - pico_anchor_xyz
         delta_user = r_user_from_pico @ delta_pico
-        delta_robot = float(scale) * (axis_matrix_from_user @ delta_user)
+        delta_robot_m = float(scale) * (axis_matrix_from_user @ delta_user)
+        delta_robot_mm = np.array(position_m_to_mm(_vector_to_tuple(delta_robot_m)), dtype=float)
 
-        target_xyz = anchor_xyz + delta_robot
+        target_xyz = anchor_xyz + delta_robot_mm
 
         return RobotArmTarget(
             position_xyz=_vector_to_tuple(target_xyz),

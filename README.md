@@ -8,7 +8,7 @@ This repository focuses on turning Pico motion/controller input into clean inter
 
 ## Architecture (MVP)
 
-Pico input -> TeleopFrame -> coordinate transform -> filtering/safety -> robot SDK adapter
+Pico input -> TeleopFrame -> coordinate transform -> safety gate -> target buffer -> fixed-rate scheduler -> robot SDK adapter
 
 Stage 1 covers Pico input refactor and parser testability.
 
@@ -17,6 +17,8 @@ Stage 2 adds semantic mapping from PicoRawFrame to TeleopFrame for higher-level 
 Stage 3 adds position-only calibration and dual-arm coordinate transform logic (pure Python, no robot SDK calls yet).
 
 Stage 4 adds a safety state machine and target safety gate that decides whether Stage 3 targets are safe to pass to a future command loop.
+
+Stage 5 adds fixed-rate command scheduling, zero-order hold buffering, and unit-audited command targets for future SDK adapter integration.
 
 ## Pico Interface Notes
 
@@ -33,6 +35,10 @@ See `docs/calibration_transform_notes.md` for Stage 3 calibration anchors, trans
 ## Safety State Machine Notes
 
 See `docs/safety_state_machine_notes.md` for Stage 4 safety states, gating conditions, and output decision policy.
+
+## Command Loop Notes
+
+See `docs/command_loop_notes.md` for Stage 5 scheduler behavior, unit conventions, fixed IK references, and limiter policy.
 
 PICO 4 Ultra hardware validation notes:
 

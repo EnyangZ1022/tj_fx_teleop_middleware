@@ -8,7 +8,7 @@ Vec3 = tuple[float, float, float]
 
 @dataclass(frozen=True)
 class RobotArmFeedback:
-    """Current end-effector feedback for one arm in that arm's SDK frame."""
+    """Current end-effector feedback in SDK units (position mm, orientation deg)."""
 
     position_xyz: Vec3
     orientation_abc: Vec3
@@ -25,7 +25,7 @@ class DualArmRobotFeedback:
 
 @dataclass(frozen=True)
 class RobotArmTarget:
-    """Target command for one arm in that arm's SDK frame."""
+    """Target for one arm in SDK units (position mm, orientation deg)."""
 
     position_xyz: Vec3
     orientation_abc: Vec3

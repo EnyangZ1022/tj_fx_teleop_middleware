@@ -22,11 +22,13 @@ For each arm:
 
 Stage 3 target position is:
 
-`target_position = robot_anchor + scale * A_arm * R_user_from_pico * (pico_position - pico_anchor)`
+`delta_robot_mm = 1000.0 * scale * A_arm * R_user_from_pico * (pico_position_m - pico_anchor_m)`
+
+`target_position_mm = robot_anchor_mm + delta_robot_mm`
 
 Where:
 
-- `robot_anchor` is the robot end-effector position captured at calibration.
+- `robot_anchor_mm` is the robot end-effector position captured at calibration (millimeter).
 - `A_arm` maps user semantic axes into the arm SDK frame.
 - `R_user_from_pico` maps Pico world displacement into user-intended forward/right/up displacement.
 - `scale` is per-arm motion gain.
@@ -39,6 +41,10 @@ Pico controller frame (validated in current project):
 - `+Y`: user up
 - `+Z`: user forward
 
+Pico / Teleop position unit:
+
+- meter
+
 Right arm SDK frame:
 
 - `+X`: forward
@@ -50,6 +56,11 @@ Left arm SDK frame:
 - `+X`: forward
 - `+Y`: down
 - `+Z`: left
+
+Robot SDK-side units used in Stage 3 output:
+
+- position: millimeter
+- orientation: degree
 
 ## Independent left/right calibration
 

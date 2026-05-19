@@ -83,8 +83,8 @@ def test_calibration_stores_anchors_for_both_arms() -> None:
         right_xyz=(-0.1, -0.2, -0.3),
     )
     feedback = _robot_feedback(
-        left_xyz=(1.0, 2.0, 3.0),
-        right_xyz=(4.0, 5.0, 6.0),
+        left_xyz=(1000.0, 2000.0, 3000.0),
+        right_xyz=(4000.0, 5000.0, 6000.0),
         left_abc=(7.0, 8.0, 9.0),
         right_abc=(10.0, 11.0, 12.0),
     )
@@ -95,12 +95,12 @@ def test_calibration_stores_anchors_for_both_arms() -> None:
     assert calibration.right is not None
 
     assert calibration.left.pico_anchor_xyz == pytest.approx((0.1, 0.2, 0.3))
-    assert calibration.left.robot_anchor_xyz == pytest.approx((1.0, 2.0, 3.0))
+    assert calibration.left.robot_anchor_xyz == pytest.approx((1000.0, 2000.0, 3000.0))
     assert calibration.left.robot_anchor_abc == pytest.approx((7.0, 8.0, 9.0))
     assert calibration.left.source_frame_id == 42
 
     assert calibration.right.pico_anchor_xyz == pytest.approx((-0.1, -0.2, -0.3))
-    assert calibration.right.robot_anchor_xyz == pytest.approx((4.0, 5.0, 6.0))
+    assert calibration.right.robot_anchor_xyz == pytest.approx((4000.0, 5000.0, 6000.0))
     assert calibration.right.robot_anchor_abc == pytest.approx((10.0, 11.0, 12.0))
     assert calibration.right.source_frame_id == 42
 
@@ -109,7 +109,7 @@ def test_right_arm_forward_motion_increases_robot_x() -> None:
     transformer = PositionOnlyCoordinateTransformer()
     calibration = transformer.create_calibration(
         _teleop_frame(right_xyz=(0.0, 0.0, 0.0)),
-        _robot_feedback(right_xyz=(1.0, 2.0, 3.0), right_abc=(10.0, 20.0, 30.0)),
+        _robot_feedback(right_xyz=(1000.0, 2000.0, 3000.0), right_abc=(10.0, 20.0, 30.0)),
         side="right",
     )
 
@@ -118,7 +118,7 @@ def test_right_arm_forward_motion_increases_robot_x() -> None:
 
     assert target.right is not None
     assert target.right.valid is True
-    assert target.right.position_xyz == pytest.approx((1.1, 2.0, 3.0))
+    assert target.right.position_xyz == pytest.approx((1100.0, 2000.0, 3000.0))
     assert target.right.orientation_abc == pytest.approx((10.0, 20.0, 30.0))
 
 
@@ -126,7 +126,7 @@ def test_right_arm_user_up_increases_robot_y() -> None:
     transformer = PositionOnlyCoordinateTransformer()
     calibration = transformer.create_calibration(
         _teleop_frame(right_xyz=(0.0, 0.0, 0.0)),
-        _robot_feedback(right_xyz=(1.0, 2.0, 3.0)),
+        _robot_feedback(right_xyz=(1000.0, 2000.0, 3000.0)),
         side="right",
     )
 
@@ -134,14 +134,14 @@ def test_right_arm_user_up_increases_robot_y() -> None:
     target = transformer.make_target(moved, None, calibration)
 
     assert target.right is not None
-    assert target.right.position_xyz == pytest.approx((1.0, 2.1, 3.0))
+    assert target.right.position_xyz == pytest.approx((1000.0, 2100.0, 3000.0))
 
 
 def test_right_arm_user_right_increases_robot_z() -> None:
     transformer = PositionOnlyCoordinateTransformer()
     calibration = transformer.create_calibration(
         _teleop_frame(right_xyz=(0.0, 0.0, 0.0)),
-        _robot_feedback(right_xyz=(1.0, 2.0, 3.0)),
+        _robot_feedback(right_xyz=(1000.0, 2000.0, 3000.0)),
         side="right",
     )
 
@@ -149,14 +149,14 @@ def test_right_arm_user_right_increases_robot_z() -> None:
     target = transformer.make_target(moved, None, calibration)
 
     assert target.right is not None
-    assert target.right.position_xyz == pytest.approx((1.0, 2.0, 3.1))
+    assert target.right.position_xyz == pytest.approx((1000.0, 2000.0, 3100.0))
 
 
 def test_left_arm_axis_mapping_and_frozen_orientation() -> None:
     transformer = PositionOnlyCoordinateTransformer()
     calibration = transformer.create_calibration(
         _teleop_frame(left_xyz=(0.0, 0.0, 0.0)),
-        _robot_feedback(left_xyz=(1.0, 2.0, 3.0), left_abc=(10.0, 20.0, 30.0)),
+        _robot_feedback(left_xyz=(1000.0, 2000.0, 3000.0), left_abc=(10.0, 20.0, 30.0)),
         side="left",
     )
 
@@ -168,9 +168,9 @@ def test_left_arm_axis_mapping_and_frozen_orientation() -> None:
     assert up_target.left is not None
     assert right_target.left is not None
 
-    assert forward_target.left.position_xyz == pytest.approx((1.1, 2.0, 3.0))
-    assert up_target.left.position_xyz == pytest.approx((1.0, 1.9, 3.0))
-    assert right_target.left.position_xyz == pytest.approx((1.0, 2.0, 2.9))
+    assert forward_target.left.position_xyz == pytest.approx((1100.0, 2000.0, 3000.0))
+    assert up_target.left.position_xyz == pytest.approx((1000.0, 1900.0, 3000.0))
+    assert right_target.left.position_xyz == pytest.approx((1000.0, 2000.0, 2900.0))
 
     assert forward_target.left.orientation_abc == pytest.approx((10.0, 20.0, 30.0))
     assert up_target.left.orientation_abc == pytest.approx((10.0, 20.0, 30.0))
@@ -181,7 +181,7 @@ def test_right_arm_scale_applied() -> None:
     transformer = PositionOnlyCoordinateTransformer(right_scale=2.0)
     calibration = transformer.create_calibration(
         _teleop_frame(right_xyz=(0.0, 0.0, 0.0)),
-        _robot_feedback(right_xyz=(1.0, 2.0, 3.0)),
+        _robot_feedback(right_xyz=(1000.0, 2000.0, 3000.0)),
         side="right",
     )
 
@@ -189,7 +189,7 @@ def test_right_arm_scale_applied() -> None:
     target = transformer.make_target(moved, None, calibration)
 
     assert target.right is not None
-    assert target.right.position_xyz == pytest.approx((1.2, 2.0, 3.0))
+    assert target.right.position_xyz == pytest.approx((1200.0, 2000.0, 3000.0))
 
 
 def test_custom_r_user_from_pico_is_used_before_arm_mapping() -> None:
@@ -202,7 +202,7 @@ def test_custom_r_user_from_pico_is_used_before_arm_mapping() -> None:
 
     calibration = transformer.create_calibration(
         _teleop_frame(right_xyz=(0.0, 0.0, 0.0)),
-        _robot_feedback(right_xyz=(1.0, 2.0, 3.0)),
+        _robot_feedback(right_xyz=(1000.0, 2000.0, 3000.0)),
         side="right",
     )
 
@@ -210,7 +210,7 @@ def test_custom_r_user_from_pico_is_used_before_arm_mapping() -> None:
     target = transformer.make_target(moved, None, calibration)
 
     assert target.right is not None
-    assert target.right.position_xyz == pytest.approx((1.1, 2.0, 3.0))
+    assert target.right.position_xyz == pytest.approx((1100.0, 2000.0, 3000.0))
 
 
 def test_make_target_without_calibration_returns_none_targets() -> None:
@@ -227,7 +227,7 @@ def test_invalid_pico_pose_returns_invalid_target() -> None:
     transformer = PositionOnlyCoordinateTransformer()
     calibration = transformer.create_calibration(
         _teleop_frame(right_xyz=(0.0, 0.0, 0.0)),
-        _robot_feedback(right_xyz=(1.0, 2.0, 3.0), right_abc=(10.0, 20.0, 30.0)),
+        _robot_feedback(right_xyz=(1000.0, 2000.0, 3000.0), right_abc=(10.0, 20.0, 30.0)),
         side="right",
     )
 
