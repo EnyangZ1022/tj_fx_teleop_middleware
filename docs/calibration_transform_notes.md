@@ -105,3 +105,23 @@ Axis click (`axisClick`) is the intended MVP calibration trigger, using rising-e
 - workspace limits
 - orientation teleoperation
 - UI
+
+## Stage 6C Integration Alignment
+
+Stage 6C audit confirms this transform is reference-relative and should remain so.
+
+- We do not use XR absolute world origin as robot absolute target origin.
+- We use activation/deadman or calibration references to compute displacement-based targets.
+- We do not accumulate targets as `target_t = target_{t-1} + delta_t`.
+- Head pose is not a control dependency.
+
+Input naming in this project remains:
+
+- `grip`: deadman/enable
+- `trigger`: gripper control
+- `axisClick`: calibration request
+
+See also:
+
+- `docs/xrobotoolkit_upstream_audit.md`
+- `docs/stage6c_integration_checklist.md`

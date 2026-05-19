@@ -68,3 +68,16 @@ Orientation is preserved unchanged in Stage 5.
 ## Non-blocking behavior
 
 Command scheduling and diagnostics should remain non-blocking. Future logging should not block a real-time command loop.
+
+## Stage 6C Integration Notes
+
+- Scheduler consumes safety-gated targets and outputs `DualArmCommandTarget` only.
+- Scheduler does not read Pico directly.
+- Scheduler does not call SDK directly.
+- Units remain explicit: xyz in mm, abc in deg, q reference in deg, time in s.
+- Fixed IK references are attached by configuration and should remain fixed.
+
+Cross-links:
+
+- `docs/xrobotoolkit_upstream_audit.md`
+- `docs/stage6c_integration_checklist.md`

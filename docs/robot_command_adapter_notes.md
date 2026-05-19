@@ -38,6 +38,8 @@ Use the fixed `ik_reference_q_deg` provided by each command target/config.
 
 Do not use previous IK output as next reference.
 
+This policy is validated again in Stage 6C integration checks.
+
 ## Startup Dependency
 
 Before Stage 6B command sending, robot startup should pass Stage 6B-pre and reach ready pose safely.
@@ -53,6 +55,12 @@ Before Stage 6B command sending, robot startup should pass Stage 6B-pre and reac
 - pause stops sending new commands
 - emergency stop is physical; software side only blocks sending and can disconnect
 
+Input semantics for upstream control intent remain:
+
+- `grip`: deadman/enable
+- `trigger`: gripper control
+- `axisClick`: calibration request
+
 ## Out of Scope in Stage 6B
 
 - direct Pico-to-robot integration inside command adapter
@@ -61,3 +69,8 @@ Before Stage 6B command sending, robot startup should pass Stage 6B-pre and reac
 - async logging
 - full continuous teleoperation integration demo
 - Stage 6C audit/planning
+
+## Stage 6C Cross-References
+
+- `docs/xrobotoolkit_upstream_audit.md`
+- `docs/stage6c_integration_checklist.md`

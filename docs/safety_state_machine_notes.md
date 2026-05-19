@@ -55,3 +55,15 @@ Stage 4 does not send commands to the robot. It only evaluates safety and return
 Future Stage 5 command loop should call the safety gate before sending any target.
 
 Future SDK adapter should consume only `safe_target` from `SafetyDecision`.
+
+## Stage 6C Integration Notes
+
+- Safety gate remains upstream of SDK command adapter and must not be bypassed.
+- Head pose is not required for safety decision in this MVP.
+- XR absolute world origin is not used for command generation.
+- Enable semantics use deadman (`grip`), not `trigger`.
+
+Cross-links:
+
+- `docs/xrobotoolkit_upstream_audit.md`
+- `docs/stage6c_integration_checklist.md`

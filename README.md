@@ -26,6 +26,8 @@ Stage 6B-pre adds a safe startup-ready-pose module that moves both arms to confi
 
 Stage 6B adds a minimal robot command adapter that consumes scheduled DualArmCommandTarget, solves IK, and sends joint commands with strict safety guards.
 
+Stage 6C adds integration validation checks, upstream XRoboToolkit alignment audit, coordinate/unit/reference-relative consistency tests, and dry-run diagnostics scripts.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -58,6 +60,14 @@ See `docs/robot_startup_ready_pose_notes.md` for Stage 6B-pre startup scope, rea
 
 See `docs/robot_command_adapter_notes.md` for Stage 6B command adapter flow, fixed IK reference policy, and send safety limits.
 
+## XRoboToolkit Upstream Audit
+
+See `docs/xrobotoolkit_upstream_audit.md` for Stage 6C upstream alignment conclusions and measured-data coordinate policy.
+
+## Stage 6C Integration Checklist
+
+See `docs/stage6c_integration_checklist.md` for Stage 6C integration verification checklist.
+
 ## Validation
 
 Run the following checks:
@@ -83,6 +93,13 @@ Manual real send (only after ready pose and operator confirmation):
 
 ```bash
 python scripts/robot_command_dry_run.py --robot-ip 192.168.1.190 --enable-send --delta-mm 2
+```
+
+Manual Stage 6C dry diagnostics (no hardware required):
+
+```bash
+python scripts/check_coordinate_mapping.py
+python scripts/check_stage6_pipeline_dry.py
 ```
 
 PICO 4 Ultra hardware validation notes:
