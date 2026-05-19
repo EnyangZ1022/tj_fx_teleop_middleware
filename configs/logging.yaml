@@ -1,0 +1,22 @@
+logging:
+  enabled: false
+  log_dir: "logs"
+  session_name: null
+
+  record:
+    events: true
+    frames: false
+    performance: false
+
+  sampling:
+    frame_sample_hz: 10.0
+    performance_sample_hz: 10.0
+
+  queue:
+    max_queue_size: 10000
+    drop_when_full: true
+
+  writer:
+    batch_size: 100
+    flush_interval_s: 1.0
+    json_indent: null

@@ -28,6 +28,8 @@ Stage 6B adds a minimal robot command adapter that consumes scheduled DualArmCom
 
 Stage 6C adds integration validation checks, upstream XRoboToolkit alignment audit, coordinate/unit/reference-relative consistency tests, and dry-run diagnostics scripts.
 
+Stage 7 adds optional asynchronous logging/recording/replay diagnostics infrastructure with non-blocking queue-based writing and disabled-by-default safety settings.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -68,6 +70,10 @@ See `docs/xrobotoolkit_upstream_audit.md` for Stage 6C upstream alignment conclu
 
 See `docs/stage6c_integration_checklist.md` for Stage 6C integration verification checklist.
 
+## Logging and Replay Notes
+
+See `docs/logging_replay_notes.md` for Stage 7 optional logging architecture, performance-safety policy, and replay scope.
+
 ## Validation
 
 Run the following checks:
@@ -101,6 +107,20 @@ Manual Stage 6C dry diagnostics (no hardware required):
 python scripts/check_coordinate_mapping.py
 python scripts/check_stage6_pipeline_dry.py
 ```
+
+Manual Stage 7 dry diagnostics (no hardware required):
+
+```bash
+python scripts/logging_dry_run.py
+python scripts/analyze_teleop_log.py --input <jsonl>
+python scripts/replay_teleop_log.py --input <jsonl>
+```
+
+Stage 7 logging defaults are safe by design:
+
+- logging is disabled by default
+- frame/performance recording is disabled by default
+- logging must remain optional and non-blocking
 
 PICO 4 Ultra hardware validation notes:
 
