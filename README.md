@@ -22,6 +22,8 @@ Stage 5 adds fixed-rate command scheduling, zero-order hold buffering, and unit-
 
 Stage 6A adds a read-only robot SDK adapter that connects, checks feedback stream, and exposes dual-arm FK feedback for calibration.
 
+Stage 6B-pre adds a safe startup-ready-pose module that moves both arms to configured low-speed joint ready positions and then stops (not teleoperation).
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -45,6 +47,25 @@ See `docs/command_loop_notes.md` for Stage 5 scheduler behavior, unit convention
 ## Robot SDK Read-Only Notes
 
 See `docs/robot_sdk_readonly_notes.md` for Stage 6A robot connection flow, feedback conversion, and arm mapping policy.
+
+## Robot Startup Ready Pose Notes
+
+See `docs/robot_startup_ready_pose_notes.md` for Stage 6B-pre startup scope, ready-pose safety policy, and run checklist.
+
+## Validation
+
+Run the following checks:
+
+```bash
+pytest -q
+python -m compileall src scripts tests
+```
+
+Manual hardware startup command (only when safe):
+
+```bash
+python scripts/move_robot_to_ready_pose.py --robot-ip 192.168.1.190
+```
 
 PICO 4 Ultra hardware validation notes:
 
