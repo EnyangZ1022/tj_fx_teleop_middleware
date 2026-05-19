@@ -1,0 +1,25 @@
+robot_sdk:
+  robot_ip: "192.168.1.190"
+  left_arm: "A"
+  right_arm: "B"
+  kine_cfg: "assets/kinematics/ccs_m6_40.MvKDCfg"
+
+  motion_params:
+    vel_ratio: 60
+    acc_ratio: 60
+
+  connection:
+    connect_check_samples: 5
+    connect_check_interval_s: 0.1
+    connect_settle_s: 0.5
+    disable_sdk_logs: true
+
+  units:
+    joint_angle: degree
+    position: millimeter
+    orientation: degree
+    time: second
+
+  ik_reference:
+    left_deg: [90, -90, -90, -90, 0, 0, 0]
+    right_deg: [90, 90, -90, -90, 0, 0, 0]

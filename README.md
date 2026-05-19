@@ -20,6 +20,8 @@ Stage 4 adds a safety state machine and target safety gate that decides whether 
 
 Stage 5 adds fixed-rate command scheduling, zero-order hold buffering, and unit-audited command targets for future SDK adapter integration.
 
+Stage 6A adds a read-only robot SDK adapter that connects, checks feedback stream, and exposes dual-arm FK feedback for calibration.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -39,6 +41,10 @@ See `docs/safety_state_machine_notes.md` for Stage 4 safety states, gating condi
 ## Command Loop Notes
 
 See `docs/command_loop_notes.md` for Stage 5 scheduler behavior, unit conventions, fixed IK references, and limiter policy.
+
+## Robot SDK Read-Only Notes
+
+See `docs/robot_sdk_readonly_notes.md` for Stage 6A robot connection flow, feedback conversion, and arm mapping policy.
 
 PICO 4 Ultra hardware validation notes:
 
