@@ -57,3 +57,17 @@ coordinate_transform:
         - [0, -1, 0]
         - [-1, 0, 0]
       scale: 1.0
+
+safety_gate:
+  pico_timeout_ms: 300.0
+  enable:
+    on_threshold: 0.85
+    off_threshold: 0.65
+    note: "Stage 4 currently uses on_threshold for simple hold-to-enable logic; hysteresis can be added later."
+  limits:
+    max_single_step_m: 0.05
+    max_velocity_mps: 0.5
+  policy:
+    allow_single_arm_motion: true
+    require_both_arms_calibrated: false
+  note: "Stage 4 gate is pure-Python and only decides whether a target is safe for a future SDK loop."

@@ -16,6 +16,8 @@ Stage 2 adds semantic mapping from PicoRawFrame to TeleopFrame for higher-level 
 
 Stage 3 adds position-only calibration and dual-arm coordinate transform logic (pure Python, no robot SDK calls yet).
 
+Stage 4 adds a safety state machine and target safety gate that decides whether Stage 3 targets are safe to pass to a future command loop.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -27,6 +29,10 @@ See `docs/teleop_mapping_notes.md` for Stage 2 semantic mapping and timing assum
 ## Calibration and Transform Notes
 
 See `docs/calibration_transform_notes.md` for Stage 3 calibration anchors, transform formula, and arm-frame mapping assumptions.
+
+## Safety State Machine Notes
+
+See `docs/safety_state_machine_notes.md` for Stage 4 safety states, gating conditions, and output decision policy.
 
 PICO 4 Ultra hardware validation notes:
 

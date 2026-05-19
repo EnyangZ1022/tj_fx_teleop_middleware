@@ -1,0 +1,14 @@
+safety:
+  pico_timeout_ms: 300.0
+  enable:
+    field: grip
+    on_threshold: 0.85
+    off_threshold: 0.65
+    mode: hold
+  target:
+    max_single_step_m: 0.05
+    max_velocity_mps: 0.5
+  calibration:
+    require_both_arms_calibrated: false
+  operation:
+    allow_single_arm_motion: true
