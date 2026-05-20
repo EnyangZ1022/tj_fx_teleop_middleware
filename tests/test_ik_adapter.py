@@ -138,7 +138,13 @@ def test_ik_adapter_applies_zsp_when_enabled(monkeypatch) -> None:
     fake_kine = _FakeKineSuccess()
     adapter = ArmIKAdapter(
         _FakeKinematicsAdapter(fake_kine),
-        config=IKSolverConfig(mode="zsp_negative_z", enable_zsp=True),
+        config=IKSolverConfig(
+            mode="zsp_negative_z",
+            enable_zsp=True,
+            zsp_para_left=(1.0, -1.0, -1.0, 0.0, 0.0, 0.0),
+            zsp_para_right=(9.0, 9.0, 9.0, 0.0, 0.0, 0.0),
+        ),
+        robot_side="left",
     )
     q = adapter.solve_xyzabc_mm_deg(
         position_xyz_mm=(100.0, 200.0, 300.0),
@@ -150,9 +156,35 @@ def test_ik_adapter_applies_zsp_when_enabled(monkeypatch) -> None:
     assert adapter.last_solver_note == "zsp_applied"
     assert fake_kine.last_structure_data is not None
     assert fake_kine.last_structure_data.zsp_type == 1
-    assert fake_kine.last_structure_data.zsp_para == [0.0, 0.0, -1.0, 0.0, 0.0, 0.0]
+    assert fake_kine.last_structure_data.zsp_para == [1.0, -1.0, -1.0, 0.0, 0.0, 0.0]
     # Fixed reference remains active in ZSP mode.
     assert fake_kine.last_structure_data.ref == [90.0, -90.0, -90.0, -90.0, 0.0, 0.0, 0.0]
+
+
+def test_ik_adapter_applies_right_side_zsp_para(monkeypatch) -> None:
+    _install_fake_fx_kine(monkeypatch)
+
+    fake_kine = _FakeKineSuccess()
+    adapter = ArmIKAdapter(
+        _FakeKinematicsAdapter(fake_kine),
+        config=IKSolverConfig(
+            mode="zsp_negative_z",
+            enable_zsp=True,
+            zsp_para_left=(1.0, -1.0, -1.0, 0.0, 0.0, 0.0),
+            zsp_para_right=(2.0, -2.0, -2.0, 0.0, 0.0, 0.0),
+        ),
+        robot_side="right",
+    )
+    q = adapter.solve_xyzabc_mm_deg(
+        position_xyz_mm=(100.0, 200.0, 300.0),
+        orientation_abc_deg=(10.0, 20.0, 30.0),
+        ik_reference_q_deg=(90.0, -90.0, -90.0, -90.0, 0.0, 0.0, 0.0),
+    )
+
+    assert q is not None
+    assert adapter.last_solver_note == "zsp_applied"
+    assert fake_kine.last_structure_data is not None
+    assert fake_kine.last_structure_data.zsp_para == [2.0, -2.0, -2.0, 0.0, 0.0, 0.0]
 
 
 def test_ik_adapter_does_not_apply_zsp_when_disabled(monkeypatch) -> None:

@@ -11,18 +11,28 @@ def test_ik_solver_config_defaults_enable_zsp_negative_z() -> None:
     assert cfg.mode == "zsp_negative_z"
     assert cfg.enable_zsp is True
     assert cfg.zsp_type == 1
-    assert cfg.zsp_para == (0.0, 0.0, -1.0, 0.0, 0.0, 0.0)
+    assert cfg.zsp_para_left == (1.0, -1.0, -1.0, 0.0, 0.0, 0.0)
+    assert cfg.zsp_para_right == (1.0, -1.0, -1.0, 0.0, 0.0, 0.0)
     assert cfg.use_zsp() is True
 
 
 def test_ik_solver_config_zsp_para_length_must_be_6() -> None:
-    cfg = IKSolverConfig(zsp_para=(0.0, 0.0, -1.0, 0.0, 0.0, 0.0))
-    assert len(cfg.zsp_para) == 6
+    cfg = IKSolverConfig(
+        zsp_para_left=(0.0, 0.0, -1.0, 0.0, 0.0, 0.0),
+        zsp_para_right=(1.0, -1.0, -1.0, 0.0, 0.0, 0.0),
+    )
+    assert len(cfg.zsp_para_left) == 6
+    assert len(cfg.zsp_para_right) == 6
 
 
-def test_ik_solver_config_invalid_zsp_para_length_raises() -> None:
+def test_ik_solver_config_invalid_left_zsp_para_length_raises() -> None:
     with pytest.raises(ValueError):
-        IKSolverConfig(zsp_para=(0.0, 0.0, -1.0))
+        IKSolverConfig(zsp_para_left=(0.0, 0.0, -1.0))
+
+
+def test_ik_solver_config_invalid_right_zsp_para_length_raises() -> None:
+    with pytest.raises(ValueError):
+        IKSolverConfig(zsp_para_right=(0.0, 0.0, -1.0))
 
 
 def test_ik_solver_config_fixed_reference_mode_disables_zsp() -> None:

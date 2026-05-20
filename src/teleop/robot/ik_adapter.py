@@ -53,10 +53,29 @@ def _to_vec7(name: str, values: Sequence[float]) -> tuple[float, float, float, f
 class ArmIKAdapter:
     """IK adapter for one arm using the SDK kinematics object."""
 
-    def __init__(self, kinematics_adapter: ArmKinematicsAdapter, config: IKSolverConfig | None = None):
+    def __init__(
+        self,
+        kinematics_adapter: ArmKinematicsAdapter,
+        config: IKSolverConfig | None = None,
+        robot_side: str | None = None,
+    ):
         self._kinematics_adapter = kinematics_adapter
         self._config = config if config is not None else IKSolverConfig()
+        self._robot_side = self._normalize_robot_side(robot_side)
         self._last_solver_note = "idle"
+
+    def _normalize_robot_side(self, robot_side: str | None) -> str:
+        if robot_side is not None:
+            side = str(robot_side).strip().lower()
+            if side not in {"left", "right"}:
+                raise ValueError("robot_side must be 'left' or 'right' when provided")
+            return side
+
+        # Backward-compatible fallback for direct unit tests and legacy constructors.
+        arm_label = str(getattr(self._kinematics_adapter, "_arm", "")).strip().upper()
+        if arm_label == "B":
+            return "right"
+        return "left"
 
     @property
     def last_solver_note(self) -> str:
@@ -67,7 +86,7 @@ class ArmIKAdapter:
             return "fixed_reference_only"
 
         zsp_type = int(self._config.zsp_type)
-        zsp_para = [float(v) for v in self._config.zsp_para]
+        zsp_para = [float(v) for v in self._config.zsp_para_for_side(self._robot_side)]
 
         try:
             if hasattr(solve_para, "set_input_ik_zsp_type"):

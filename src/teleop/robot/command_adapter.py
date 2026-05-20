@@ -82,8 +82,16 @@ class RobotCommandAdapter:
         if not self._sdk_adapter.left_kine.is_initialized or not self._sdk_adapter.right_kine.is_initialized:
             raise RuntimeError("Kinematics adapters must be initialized")
 
-        self.left_ik_adapter = ArmIKAdapter(self._sdk_adapter.left_kine, config=self._config.ik_solver)
-        self.right_ik_adapter = ArmIKAdapter(self._sdk_adapter.right_kine, config=self._config.ik_solver)
+        self.left_ik_adapter = ArmIKAdapter(
+            self._sdk_adapter.left_kine,
+            config=self._config.ik_solver,
+            robot_side="left",
+        )
+        self.right_ik_adapter = ArmIKAdapter(
+            self._sdk_adapter.right_kine,
+            config=self._config.ik_solver,
+            robot_side="right",
+        )
 
         self.reset_last_sent()
         self._commands_enabled = bool(self._config.command_enabled)
