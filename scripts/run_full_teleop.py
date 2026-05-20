@@ -157,6 +157,15 @@ def main() -> int:
         window_title="TJ-FX Teleop Diagnostic UI",
     )
     logging_config = LoggingConfig(enabled=bool(args.logging))
+    if bool(args.logging):
+        logging_config = LoggingConfig(
+            enabled=True,
+            record_events=True,
+            record_frames=True,
+            record_performance=True,
+            frame_sample_hz=float(args.rate_hz),
+            performance_sample_hz=min(float(args.rate_hz), 50.0),
+        )
 
     snapshot_store = LatestSnapshotStore() if bool(args.ui) else None
 

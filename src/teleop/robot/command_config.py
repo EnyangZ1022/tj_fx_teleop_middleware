@@ -28,7 +28,7 @@ class RobotCommandConfig:
     send_left: bool = True
     send_right: bool = True
 
-    joint_k: tuple[float, ...] = (12, 12, 12, 12, 12, 12, 12)
+    joint_k: tuple[float, ...] = (6, 6, 6, 5, 4, 3, 3)
     joint_d: tuple[float, ...] = (0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2)
     vel_ratio: int = 20
     acc_ratio: int = 20

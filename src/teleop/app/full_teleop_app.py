@@ -397,6 +397,32 @@ class FullTeleopApp:
                 "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
                 "left_relative_angle_deg": self._latest_orientation_debug["left"].get("relative_angle_deg"),
                 "right_relative_angle_deg": self._latest_orientation_debug["right"].get("relative_angle_deg"),
+                "feedback_left_xyz_mm": (
+                    list(feedback.left.position_xyz)
+                    if feedback is not None and feedback.left is not None
+                    else None
+                ),
+                "feedback_left_abc_deg": (
+                    list(feedback.left.orientation_abc)
+                    if feedback is not None and feedback.left is not None
+                    else None
+                ),
+                "feedback_right_xyz_mm": (
+                    list(feedback.right.position_xyz)
+                    if feedback is not None and feedback.right is not None
+                    else None
+                ),
+                "feedback_right_abc_deg": (
+                    list(feedback.right.orientation_abc)
+                    if feedback is not None and feedback.right is not None
+                    else None
+                ),
+                "command_left_q_deg": command_result.get("left_q_deg") if command_result is not None else None,
+                "command_right_q_deg": command_result.get("right_q_deg") if command_result is not None else None,
+                "command_left_sent": command_result.get("left_sent") if command_result is not None else None,
+                "command_right_sent": command_result.get("right_sent") if command_result is not None else None,
+                "command_left_reason": command_result.get("left_reason") if command_result is not None else None,
+                "command_right_reason": command_result.get("right_reason") if command_result is not None else None,
             },
         )
         self.logger.log_performance(
