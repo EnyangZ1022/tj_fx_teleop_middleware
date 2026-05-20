@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from teleop.app import FullTeleopAppConfig
 from teleop.core.pose import Pose7
 from teleop.core.robot_frame import DualArmRobotTarget, RobotArmTarget
@@ -7,6 +9,7 @@ from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
 from teleop.safety import SafetyConfig, TargetSafetyGate
 from teleop.safety.state_machine import SafetyState
 from teleop.transform.calibration import ArmCalibrationAnchor, DualArmCalibrationState
+from teleop.transform.orientation_transform import OrientationTrackingConfig
 
 
 def _pose(x: float, y: float, z: float) -> Pose7:
@@ -68,6 +71,23 @@ def test_default_app_config_safe_defaults() -> None:
     assert cfg.enable_send is False
     assert cfg.logging_enabled is False
     assert cfg.ui_enabled is False
+    assert cfg.teleop_mode == "position_only"
+    assert cfg.orientation_tracking.enabled is False
+
+
+def test_position_orientation_mode_enables_orientation_tracking() -> None:
+    cfg = FullTeleopAppConfig(
+        teleop_mode="position_orientation",
+        orientation_tracking=OrientationTrackingConfig(enabled=False),
+    )
+
+    assert cfg.teleop_mode == "position_orientation"
+    assert cfg.orientation_tracking.enabled is True
+
+
+def test_invalid_teleop_mode_raises() -> None:
+    with pytest.raises(ValueError):
+        FullTeleopAppConfig(teleop_mode="invalid_mode")
 
 
 def test_enable_send_forces_non_dry_run() -> None:

@@ -92,6 +92,10 @@ See `docs/ui_visualization_notes.md` for Stage 8 diagnostic UI scope, refresh po
 
 See `docs/full_teleop_app_notes.md` for Stage 9 orchestration flow, runtime safety defaults, and full app launch commands.
 
+## Orientation Tracking Notes
+
+See `docs/orientation_tracking_notes.md` for optional orientation tracking mode details and safety guidance.
+
 ## Validation
 
 Run the following checks:
@@ -152,6 +156,9 @@ python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui
 
 # Real send only after staged checks and on-site safety confirmation
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui
+
+# Experimental position+orientation tracking mode
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation
 ```
 
 Stage 7 logging defaults are safe by design:
@@ -173,6 +180,11 @@ Stage 9 full-app defaults are safe by design:
 - logging is disabled by default
 - calibration trigger uses axisClick rising edge (menuButton unused in MVP)
 - real robot command send requires explicit `--enable-send --confirm` and typing `YES`
+
+Teleop mode defaults are safe by design:
+
+- `position_only` is the default mode
+- orientation tracking is disabled unless `--teleop-mode position_orientation` (or `--enable-orientation`) is explicitly set
 
 Stage 10 hardware-validation note:
 

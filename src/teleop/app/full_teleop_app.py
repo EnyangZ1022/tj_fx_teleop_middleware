@@ -8,6 +8,7 @@ from teleop.app.app_config import FullTeleopAppConfig
 from teleop.control.command_scheduler import CommandSchedulerConfig, FixedRateCommandScheduler
 from teleop.control.target_buffer import TargetBuffer
 from teleop.core.command_frame import CommandLoopDiagnostics, DualArmCommandTarget
+from teleop.core.teleop_mode import TeleopMode
 from teleop.core.robot_frame import DualArmRobotFeedback, DualArmRobotTarget
 from teleop.core.teleop_frame import TeleopFrame
 from teleop.input.pico_mapping import PicoInputMapper
@@ -25,7 +26,8 @@ from teleop.robot import (
 from teleop.safety import SafetyConfig, TargetSafetyGate
 from teleop.safety.state_machine import SafetyDecision, SafetyState
 from teleop.transform.calibration import DualArmCalibrationState, detect_axis_click_calibration_request
-from teleop.transform.coordinate_transform import PositionOnlyCoordinateTransformer
+from teleop.transform.coordinate_transform import PositionOnlyCoordinateTransformer, PositionOrientationCoordinateTransformer
+from teleop.transform.orientation_transform import SDKOrientationConverter
 from teleop.ui.snapshot import LatestSnapshotStore
 from teleop.ui.snapshot_builder import build_visualization_snapshot
 from teleop.ui.ui_config import UIConfig
@@ -57,7 +59,7 @@ class FullTeleopApp:
         command_adapter: RobotCommandAdapter | None = None,
         logger: AsyncSessionLogger | NullSessionLogger | None = None,
         snapshot_store: LatestSnapshotStore | None = None,
-        coordinate_transformer: PositionOnlyCoordinateTransformer | None = None,
+        coordinate_transformer: PositionOnlyCoordinateTransformer | PositionOrientationCoordinateTransformer | None = None,
         safety_gate: TargetSafetyGate | None = None,
         target_buffer: TargetBuffer | None = None,
         scheduler: FixedRateCommandScheduler | None = None,
@@ -111,9 +113,14 @@ class FullTeleopApp:
         self.sdk_adapter = sdk_adapter
         self.command_adapter = command_adapter
 
-        self.coordinate_transformer = (
-            coordinate_transformer if coordinate_transformer is not None else PositionOnlyCoordinateTransformer()
-        )
+        if coordinate_transformer is not None:
+            self.coordinate_transformer = coordinate_transformer
+        elif self.config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:
+            self.coordinate_transformer = PositionOrientationCoordinateTransformer(
+                orientation_config=self.config.orientation_tracking,
+            )
+        else:
+            self.coordinate_transformer = PositionOnlyCoordinateTransformer()
         self.safety_gate = safety_gate if safety_gate is not None else TargetSafetyGate(self.safety_config)
         self.target_buffer = target_buffer if target_buffer is not None else TargetBuffer()
         self.scheduler = (
@@ -147,6 +154,10 @@ class FullTeleopApp:
         self._latest_decision: SafetyDecision | None = None
         self._latest_diagnostics: CommandLoopDiagnostics | None = None
         self._latest_command_result: dict[str, Any] | None = None
+        self._latest_orientation_debug: dict[str, dict[str, float | str | bool | None]] = {
+            "left": {"enabled": False, "reason": "idle", "relative_angle_deg": None},
+            "right": {"enabled": False, "reason": "idle", "relative_angle_deg": None},
+        }
         self._loop_start_time_s: float | None = None
 
     @property
@@ -174,6 +185,7 @@ class FullTeleopApp:
 
             if self.config.connect_robot and self.sdk_adapter is not None:
                 self.sdk_adapter.connect()
+                self._attach_orientation_converters_from_sdk()
 
                 if self.config.move_to_ready:
                     startup = RobotStartupAdapter(
@@ -204,6 +216,12 @@ class FullTeleopApp:
                     "enable_send": bool(self.config.enable_send),
                     "ui_enabled": bool(self.ui_config.enabled),
                     "logging_enabled": bool(self.logging_config.enabled),
+                    "teleop_mode": str(self.config.teleop_mode),
+                    "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
+                    "orientation_relative_mode": str(self.config.orientation_tracking.relative_mode),
+                    "orientation_rotation_scale": float(self.config.orientation_tracking.rotation_scale),
+                    "orientation_max_total_angle_deg": float(self.config.orientation_tracking.max_total_angle_deg),
+                    "orientation_max_step_angle_deg": float(self.config.orientation_tracking.max_step_angle_deg),
                 },
             )
         except Exception:
@@ -311,6 +329,23 @@ class FullTeleopApp:
             )
 
         robot_target = self._build_robot_target(teleop_frame, feedback)
+        self._refresh_orientation_debug_state()
+
+        if robot_target is not None:
+            for side in ("left", "right"):
+                side_target = robot_target.left if side == "left" else robot_target.right
+                if side_target is not None and not side_target.valid and str(side_target.reason).startswith(
+                    "orientation_transform_failed"
+                ):
+                    self.logger.log_error(
+                        "orientation_transform_failed",
+                        payload={
+                            "side": side,
+                            "reason": str(side_target.reason),
+                            "frame_id": int(teleop_frame.frame_id) if teleop_frame is not None else None,
+                        },
+                    )
+
         decision = self.safety_gate.evaluate(
             teleop_frame=teleop_frame,
             robot_target=robot_target,
@@ -355,6 +390,10 @@ class FullTeleopApp:
                 "safety_state": str(decision.state.value),
                 "allow_motion": bool(decision.allow_motion),
                 "command_ready": bool(command_target is not None),
+                "teleop_mode": str(self.config.teleop_mode),
+                "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
+                "left_relative_angle_deg": self._latest_orientation_debug["left"].get("relative_angle_deg"),
+                "right_relative_angle_deg": self._latest_orientation_debug["right"].get("relative_angle_deg"),
             },
         )
         self.logger.log_performance(
@@ -408,6 +447,40 @@ class FullTeleopApp:
             calibration=self._calibration_state,
         )
         return self._apply_single_arm_mode_to_target(target)
+
+    def _refresh_orientation_debug_state(self) -> None:
+        if hasattr(self.coordinate_transformer, "latest_orientation_debug"):
+            try:
+                debug = self.coordinate_transformer.latest_orientation_debug()
+                if isinstance(debug, dict):
+                    self._latest_orientation_debug = {
+                        "left": dict(debug.get("left", {})),
+                        "right": dict(debug.get("right", {})),
+                    }
+            except Exception:
+                pass
+
+    def _attach_orientation_converters_from_sdk(self) -> None:
+        if not hasattr(self.coordinate_transformer, "set_orientation_converters"):
+            return
+        if self.sdk_adapter is None:
+            return
+
+        converters: dict[str, SDKOrientationConverter] = {}
+
+        left_kine_obj = getattr(getattr(self.sdk_adapter, "left_kine", None), "_kine", None)
+        if left_kine_obj is not None:
+            converters["left"] = SDKOrientationConverter(left_kine_obj)
+
+        right_kine_obj = getattr(getattr(self.sdk_adapter, "right_kine", None), "_kine", None)
+        if right_kine_obj is not None:
+            converters["right"] = SDKOrientationConverter(right_kine_obj)
+
+        try:
+            self.coordinate_transformer.set_orientation_converters(converters)
+        except Exception:
+            # Orientation converter wiring is best effort and must not break startup.
+            pass
 
     def _apply_single_arm_mode_to_target(self, target: DualArmRobotTarget | None) -> DualArmRobotTarget | None:
         if target is None:
@@ -488,6 +561,15 @@ class FullTeleopApp:
             right_calibrated=right_calibrated,
             ik_status=ik_status,
             sdk_status=sdk_status,
+            teleop_mode=str(self.config.teleop_mode),
+            orientation_tracking_enabled=bool(self.config.orientation_tracking.enabled),
+            orientation_relative_mode=(
+                str(self.config.orientation_tracking.relative_mode)
+                if bool(self.config.orientation_tracking.enabled)
+                else ""
+            ),
+            left_relative_angle_deg=self._latest_orientation_debug["left"].get("relative_angle_deg"),
+            right_relative_angle_deg=self._latest_orientation_debug["right"].get("relative_angle_deg"),
         )
         self.snapshot_store.set(snapshot)
 

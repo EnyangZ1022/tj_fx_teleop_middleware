@@ -12,12 +12,13 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from teleop.app import FullTeleopApp, FullTeleopAppConfig
+from teleop.core.teleop_mode import TeleopMode
 from teleop.logging import LoggingConfig
 from teleop.ui.snapshot import LatestSnapshotStore
 from teleop.ui.ui_config import UIConfig
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run full teleoperation orchestration pipeline with safe defaults. "
@@ -32,6 +33,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--enable-send", action="store_true", help="Enable real robot command send")
     parser.add_argument("--ui", action="store_true", help="Enable diagnostic UI")
     parser.add_argument("--logging", action="store_true", help="Enable async logging")
+    parser.add_argument(
+        "--teleop-mode",
+        choices=[TeleopMode.POSITION_ONLY.value, TeleopMode.POSITION_ORIENTATION.value],
+        default=TeleopMode.POSITION_ONLY.value,
+        help="Teleoperation mode (position-only default; orientation tracking is experimental)",
+    )
+    parser.add_argument(
+        "--enable-orientation",
+        action="store_true",
+        help="Shorthand for --teleop-mode position_orientation",
+    )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
     parser.add_argument("--max-runtime-s", type=float, default=None, help="Optional runtime cap in seconds")
@@ -40,7 +52,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Required alongside --enable-send to unlock interactive YES confirmation",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def _confirm_real_send(args: argparse.Namespace) -> bool:
@@ -64,6 +76,9 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         dry_run = True
 
     side_mode = None if args.side == "both" else args.side
+    teleop_mode = str(args.teleop_mode)
+    if bool(args.enable_orientation):
+        teleop_mode = TeleopMode.POSITION_ORIENTATION.value
 
     return FullTeleopAppConfig(
         robot_ip=str(args.robot_ip),
@@ -76,6 +91,7 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         command_rate_hz=float(args.rate_hz),
         ui_enabled=bool(args.ui),
         logging_enabled=bool(args.logging),
+        teleop_mode=teleop_mode,
         single_arm_mode=side_mode,
         max_runtime_s=float(args.max_runtime_s) if args.max_runtime_s is not None else None,
     )
@@ -102,6 +118,16 @@ def main() -> int:
             return 1
 
     app_config = _build_app_config(args)
+
+    print(f"Teleop mode: {app_config.teleop_mode}")
+    if bool(app_config.orientation_tracking.enabled):
+        print("Orientation tracking: enabled")
+        print(f"  rotation_scale={float(app_config.orientation_tracking.rotation_scale):.3f}")
+        print(f"  max_total_angle_deg={float(app_config.orientation_tracking.max_total_angle_deg):.2f}")
+        print(f"  max_step_angle_deg={float(app_config.orientation_tracking.max_step_angle_deg):.2f}")
+        print(f"  relative_mode={app_config.orientation_tracking.relative_mode}")
+    else:
+        print("Orientation tracking: disabled")
 
     ui_config = UIConfig(
         enabled=bool(args.ui),

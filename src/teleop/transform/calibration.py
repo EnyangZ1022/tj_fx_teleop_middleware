@@ -23,6 +23,17 @@ class ArmCalibrationAnchor:
     robot_anchor_xyz: tuple[float, float, float]
     robot_anchor_abc: tuple[float, float, float]
     source_frame_id: int
+    controller_anchor_quat_xyzw: tuple[float, float, float, float] | None = None
+    robot_anchor_rotmat: tuple[tuple[float, float, float], ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.controller_anchor_quat_xyzw is not None:
+            q = tuple(float(v) for v in self.controller_anchor_quat_xyzw)
+            if len(q) != 4 or not all(math.isfinite(v) for v in q):
+                raise ValueError("controller_anchor_quat_xyzw must be a finite quaternion")
+
+        if self.robot_anchor_rotmat is not None and not _is_valid_matrix_3x3(self.robot_anchor_rotmat):
+            raise ValueError("robot_anchor_rotmat must be a finite 3x3 matrix when provided")
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
+
+from teleop.core.teleop_mode import TeleopMode, normalize_teleop_mode
+from teleop.transform.orientation_transform import OrientationTrackingConfig
 
 
 _ALLOWED_SINGLE_ARM_MODES = {None, "left", "right"}
@@ -18,6 +21,8 @@ class FullTeleopAppConfig:
     command_rate_hz: float = 100.0
     ui_enabled: bool = False
     logging_enabled: bool = False
+    teleop_mode: str = TeleopMode.POSITION_ONLY.value
+    orientation_tracking: OrientationTrackingConfig = field(default_factory=OrientationTrackingConfig)
     single_arm_mode: str | None = None
     max_runtime_s: float | None = None
     startup_wait_s: float = 2.0
@@ -31,6 +36,19 @@ class FullTeleopAppConfig:
         if mode not in _ALLOWED_SINGLE_ARM_MODES:
             raise ValueError("single_arm_mode must be one of: None, 'left', 'right'")
         object.__setattr__(self, "single_arm_mode", mode)
+
+        teleop_mode = normalize_teleop_mode(self.teleop_mode)
+        object.__setattr__(self, "teleop_mode", teleop_mode)
+
+        if not isinstance(self.orientation_tracking, OrientationTrackingConfig):
+            raise ValueError("orientation_tracking must be an OrientationTrackingConfig instance")
+
+        orientation_cfg = self.orientation_tracking
+        if teleop_mode == TeleopMode.POSITION_ONLY.value and orientation_cfg.enabled:
+            orientation_cfg = replace(orientation_cfg, enabled=False)
+        elif teleop_mode == TeleopMode.POSITION_ORIENTATION.value and not orientation_cfg.enabled:
+            orientation_cfg = replace(orientation_cfg, enabled=True)
+        object.__setattr__(self, "orientation_tracking", orientation_cfg)
 
         if not str(self.robot_ip).strip():
             raise ValueError("robot_ip must not be empty")

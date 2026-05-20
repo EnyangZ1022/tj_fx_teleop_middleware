@@ -33,6 +33,13 @@ Real send is only allowed with explicit CLI opt-in and interactive YES confirmat
 
 menuButton is unused for MVP calibration logic.
 
+## Teleop Modes
+
+- position_only (default): position tracking with frozen calibration-time orientation
+- position_orientation (experimental): position tracking plus relative-quaternion orientation tracking
+
+Orientation tracking must be explicitly enabled by CLI mode selection.
+
 ## Unit Conventions
 
 - Pico/controller position: meters
@@ -60,6 +67,10 @@ Real send (only after staged checks and onsite safety verification):
 
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui
 
+Experimental orientation tracking:
+
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation
+
 ## Manual Validation Sequence
 
 1. Pure dry pipeline check:
@@ -81,8 +92,8 @@ python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --ena
 ## Known Limitations
 
 - no workspace planner yet
-- position-only teleoperation
-- orientation remains frozen from calibration anchor
+- position-only is default; orientation tracking mode is experimental
+- default mode keeps orientation frozen from calibration anchor
 - gripper motion command path may remain future work
 - UI is diagnostic-only
 - logging is optional and disabled by default

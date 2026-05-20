@@ -1,5 +1,6 @@
 from teleop.core.command_frame import ArmCommandTarget, CommandLoopDiagnostics, DualArmCommandTarget
 from teleop.core.robot_frame import DualArmRobotFeedback, DualArmRobotTarget, RobotArmFeedback, RobotArmTarget
+from teleop.core.teleop_mode import TeleopMode, normalize_teleop_mode
 from teleop.core.units import meters_to_mm, mm_to_meters, position_m_to_mm, position_mm_to_m
 
 __all__ = [
@@ -10,6 +11,8 @@ __all__ = [
 	"ArmCommandTarget",
 	"DualArmCommandTarget",
 	"CommandLoopDiagnostics",
+	"TeleopMode",
+	"normalize_teleop_mode",
 	"meters_to_mm",
 	"mm_to_meters",
 	"position_m_to_mm",

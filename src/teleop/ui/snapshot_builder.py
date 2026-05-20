@@ -67,6 +67,11 @@ def build_visualization_snapshot(
     right_calibrated: bool | None = None,
     ik_status: str = "",
     sdk_status: str = "",
+    teleop_mode: str = "position_only",
+    orientation_tracking_enabled: bool = False,
+    orientation_relative_mode: str = "",
+    left_relative_angle_deg: float | None = None,
+    right_relative_angle_deg: float | None = None,
 ) -> TeleopVisualizationSnapshot:
     ts_ns = int(time.time_ns() if timestamp_ns is None else timestamp_ns)
 
@@ -147,6 +152,11 @@ def build_visualization_snapshot(
         target_age_ms=target_age_ms,
         ik_status=str(ik_status),
         sdk_status=str(sdk_status),
+        teleop_mode=str(teleop_mode),
+        orientation_tracking_enabled=bool(orientation_tracking_enabled),
+        orientation_relative_mode=str(orientation_relative_mode),
+        left_relative_angle_deg=float(left_relative_angle_deg) if left_relative_angle_deg is not None else None,
+        right_relative_angle_deg=float(right_relative_angle_deg) if right_relative_angle_deg is not None else None,
         logging_enabled=logging_enabled,
         dropped_log_count=dropped_log_count,
     )

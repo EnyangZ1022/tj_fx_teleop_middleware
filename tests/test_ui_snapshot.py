@@ -55,6 +55,8 @@ def test_snapshot_builder_handles_missing_inputs() -> None:
     assert snapshot.left.error_norm_mm is None
     assert snapshot.right.error_norm_mm is None
     assert snapshot.safety_state == "UNKNOWN"
+    assert snapshot.teleop_mode == "position_only"
+    assert snapshot.orientation_tracking_enabled is False
 
 
 def test_snapshot_builder_computes_error_norm_when_target_and_feedback_exist() -> None:
@@ -103,6 +105,11 @@ def test_snapshot_builder_computes_error_norm_when_target_and_feedback_exist() -
         command_diagnostics=diagnostics,
         pico_connected=True,
         robot_connected=True,
+        teleop_mode="position_orientation",
+        orientation_tracking_enabled=True,
+        orientation_relative_mode="world",
+        left_relative_angle_deg=3.5,
+        right_relative_angle_deg=2.5,
     )
 
     assert snapshot.left.error_norm_mm == 5.0
@@ -110,6 +117,11 @@ def test_snapshot_builder_computes_error_norm_when_target_and_feedback_exist() -
     assert snapshot.right.active is False
     assert snapshot.command_loop_dt_ms == 10.0
     assert snapshot.target_age_ms == 20.0
+    assert snapshot.teleop_mode == "position_orientation"
+    assert snapshot.orientation_tracking_enabled is True
+    assert snapshot.orientation_relative_mode == "world"
+    assert snapshot.left_relative_angle_deg == 3.5
+    assert snapshot.right_relative_angle_deg == 2.5
 
 
 def test_ui_config_defaults() -> None:

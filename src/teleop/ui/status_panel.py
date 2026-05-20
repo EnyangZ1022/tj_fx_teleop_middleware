@@ -27,6 +27,12 @@ class TeleopStatusPanel(QWidget):
         self._set_text("robot_connected", _format_bool(snapshot.robot_connected))
         self._set_text("safety_state", str(snapshot.safety_state))
         self._set_text("global_status", str(snapshot.global_status) if snapshot.global_status else "-")
+        self._set_text("teleop_mode", str(snapshot.teleop_mode) if snapshot.teleop_mode else "-")
+        self._set_text("orientation_tracking", _format_bool(snapshot.orientation_tracking_enabled))
+        self._set_text(
+            "orientation_relative_mode",
+            str(snapshot.orientation_relative_mode) if snapshot.orientation_relative_mode else "-",
+        )
 
         self._set_text("left_calibrated", _format_bool(snapshot.left.calibrated))
         self._set_text("left_active", _format_bool(snapshot.left.active))
@@ -45,6 +51,8 @@ class TeleopStatusPanel(QWidget):
 
         self._set_text("ik_status", str(snapshot.ik_status) if snapshot.ik_status else "-")
         self._set_text("sdk_status", str(snapshot.sdk_status) if snapshot.sdk_status else "-")
+        self._set_text("left_relative_angle_deg", _format_float(snapshot.left_relative_angle_deg, 2, " deg"))
+        self._set_text("right_relative_angle_deg", _format_float(snapshot.right_relative_angle_deg, 2, " deg"))
 
         self._set_text("logging_enabled", _format_bool(snapshot.logging_enabled))
         self._set_text("dropped_log_count", str(int(snapshot.dropped_log_count)))
@@ -64,6 +72,9 @@ _STATUS_ROWS = [
     ("robot_connected", "Robot connected"),
     ("safety_state", "Safety state"),
     ("global_status", "Global status"),
+    ("teleop_mode", "Teleop mode"),
+    ("orientation_tracking", "Orientation tracking"),
+    ("orientation_relative_mode", "Orientation relative mode"),
     ("left_calibrated", "Left calibrated"),
     ("left_active", "Left active"),
     ("left_enable", "Left enable/deadman"),
@@ -77,6 +88,8 @@ _STATUS_ROWS = [
     ("target_age_ms", "Target age"),
     ("ik_status", "IK status"),
     ("sdk_status", "SDK status"),
+    ("left_relative_angle_deg", "Left relative angle"),
+    ("right_relative_angle_deg", "Right relative angle"),
     ("logging_enabled", "Logging enabled"),
     ("dropped_log_count", "Dropped log count"),
 ]

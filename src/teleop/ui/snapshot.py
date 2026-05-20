@@ -38,6 +38,11 @@ class TeleopVisualizationSnapshot:
     target_age_ms: float | None = None
     ik_status: str = ""
     sdk_status: str = ""
+    teleop_mode: str = "position_only"
+    orientation_tracking_enabled: bool = False
+    orientation_relative_mode: str = ""
+    left_relative_angle_deg: float | None = None
+    right_relative_angle_deg: float | None = None
     logging_enabled: bool = False
     dropped_log_count: int = 0
 
