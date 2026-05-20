@@ -64,12 +64,20 @@ Before Stage 6B command sending, robot startup should pass Stage 6B-pre and reac
 
 - dry-run is enabled by default
 - command_enabled is false by default
+- control_mode defaults to `joint_position`
 - IK failure rejects command
 - invalid target rejects command
 - joint step limit rejects large jumps
 - joint velocity limit rejects excessive speed
 - pause stops sending new commands
 - emergency stop is physical; software side only blocks sending and can disconnect
+
+## Control Modes
+
+- `joint_position` (default): enters position mode only
+- `joint_impedance` (optional): runs impedance setup and calls `set_vel_est_step` when SDK supports it
+
+In this code path, `set_vel_est_step` is used only in `joint_impedance` mode.
 
 Input semantics for upstream control intent remain:
 

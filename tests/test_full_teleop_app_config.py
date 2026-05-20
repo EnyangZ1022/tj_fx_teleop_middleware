@@ -72,6 +72,7 @@ def test_default_app_config_safe_defaults() -> None:
     assert cfg.logging_enabled is False
     assert cfg.ui_enabled is False
     assert cfg.teleop_mode == "position_only"
+    assert cfg.control_mode == "joint_position"
     assert cfg.orientation_tracking.enabled is False
 
 
@@ -88,6 +89,11 @@ def test_position_orientation_mode_enables_orientation_tracking() -> None:
 def test_invalid_teleop_mode_raises() -> None:
     with pytest.raises(ValueError):
         FullTeleopAppConfig(teleop_mode="invalid_mode")
+
+
+def test_invalid_control_mode_raises() -> None:
+    with pytest.raises(ValueError):
+        FullTeleopAppConfig(control_mode="invalid_mode")
 
 
 def test_enable_send_forces_non_dry_run() -> None:

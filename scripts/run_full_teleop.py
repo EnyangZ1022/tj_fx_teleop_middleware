@@ -44,6 +44,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Shorthand for --teleop-mode position_orientation",
     )
+    parser.add_argument(
+        "--control-mode",
+        choices=["joint_position", "joint_impedance"],
+        default="joint_position",
+        help="Robot command control mode (joint_position default; joint_impedance requires extra safety checks)",
+    )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
     parser.add_argument("--max-runtime-s", type=float, default=None, help="Optional runtime cap in seconds")
@@ -59,6 +65,7 @@ def _confirm_real_send(args: argparse.Namespace) -> bool:
     print("Real send requested. Review before proceeding:")
     print(f"  robot_ip: {args.robot_ip}")
     print(f"  rate_hz: {float(args.rate_hz):.1f}")
+    print(f"  control_mode: {str(args.control_mode)}")
     print(f"  move_to_ready: {bool(args.move_to_ready)}")
     print("Safety reminders:")
     print("  - keep emergency stop reachable")
@@ -92,24 +99,38 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         ui_enabled=bool(args.ui),
         logging_enabled=bool(args.logging),
         teleop_mode=teleop_mode,
+        control_mode=str(args.control_mode),
         single_arm_mode=side_mode,
         max_runtime_s=float(args.max_runtime_s) if args.max_runtime_s is not None else None,
     )
 
 
+def _validate_runtime_args(args: argparse.Namespace) -> str | None:
+    if bool(args.enable_send) and bool(args.no_robot):
+        return "--enable-send cannot be combined with --no-robot"
+
+    if bool(args.enable_send) and not bool(args.confirm):
+        return "Real send requires --confirm and interactive YES confirmation."
+
+    if (
+        bool(args.enable_send)
+        and str(args.control_mode).strip().lower() == "joint_impedance"
+        and not bool(args.move_to_ready)
+    ):
+        return "joint_impedance mode requires --move-to-ready for real robot sending in this MVP."
+
+    if args.max_runtime_s is not None and float(args.max_runtime_s) <= 0.0:
+        return "--max-runtime-s must be positive when provided"
+
+    return None
+
+
 def main() -> int:
     args = parse_args()
 
-    if bool(args.enable_send) and bool(args.no_robot):
-        print("--enable-send cannot be combined with --no-robot")
-        return 2
-
-    if bool(args.enable_send) and not bool(args.confirm):
-        print("Real send requires --confirm and interactive YES confirmation.")
-        return 2
-
-    if args.max_runtime_s is not None and float(args.max_runtime_s) <= 0.0:
-        print("--max-runtime-s must be positive when provided")
+    validation_error = _validate_runtime_args(args)
+    if validation_error is not None:
+        print(validation_error)
         return 2
 
     if bool(args.enable_send):
@@ -119,6 +140,7 @@ def main() -> int:
 
     app_config = _build_app_config(args)
 
+    print(f"Control mode: {app_config.control_mode}")
     print(f"Teleop mode: {app_config.teleop_mode}")
     if bool(app_config.orientation_tracking.enabled):
         print("Orientation tracking: enabled")

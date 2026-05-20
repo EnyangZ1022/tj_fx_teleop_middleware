@@ -18,11 +18,16 @@ Optional observers:
 
 - dry_run defaults to true
 - enable_send defaults to false
+- control_mode defaults to `joint_position`
 - UI defaults to disabled
 - logging defaults to disabled
 - move_to_ready defaults to false
 
 Real send is only allowed with explicit CLI opt-in and interactive YES confirmation.
+
+Additional MVP safety gate:
+
+- Real send with `control_mode=joint_impedance` requires `--move-to-ready`.
 
 ## Calibration Process
 
@@ -66,6 +71,10 @@ python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --logg
 Real send (only after staged checks and onsite safety verification):
 
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui
+
+Real send in impedance mode (requires move-to-ready):
+
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --control-mode joint_impedance
 
 Experimental orientation tracking:
 

@@ -256,6 +256,15 @@ def test_enter_command_mode_joint_impedance_calls_sdk_methods() -> None:
     assert "set_vel_est_step" in call_names
 
 
+def test_enter_command_mode_joint_position_does_not_call_vel_est_step() -> None:
+    adapter, sdk = _prepare_adapter(RobotCommandConfig(control_mode="joint_position", command_enabled=False))
+
+    adapter.enter_command_mode()
+
+    call_names = [c[0] for c in sdk.robot.calls]
+    assert "set_vel_est_step" not in call_names
+
+
 def test_dry_run_does_not_require_enable_flag() -> None:
     adapter, _ = _prepare_adapter(RobotCommandConfig(dry_run=True, command_enabled=False))
     adapter.left_ik_adapter = _QueueIK([(1, 2, 3, 4, 5, 6, 7)])

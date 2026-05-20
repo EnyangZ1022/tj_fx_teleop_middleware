@@ -88,10 +88,13 @@ class FullTeleopApp:
             send_right = False
         elif config.single_arm_mode == "right":
             send_left = False
+        ctrl_hz = max(1, int(round(float(config.command_rate_hz))))
         self.robot_command_config = replace(
             base_robot_command_config,
             dry_run=bool(config.dry_run),
             command_enabled=bool(config.enable_send),
+            control_mode=str(config.control_mode),
+            ctrl_hz=ctrl_hz,
             send_left=send_left,
             send_right=send_right,
         )

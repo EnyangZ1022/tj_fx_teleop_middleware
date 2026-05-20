@@ -20,6 +20,7 @@ Diagnostic UI and asynchronous logging are supported as optional tools.
 - Optional async logging and replay tooling (disabled by default)
 - Optional PySide6/PyQtGraph diagnostic UI (diagnostic-only)
 - Experimental position+orientation teleop mode (explicit opt-in)
+- Robot command control mode selection (`joint_position` default, optional `joint_impedance`)
 
 ## 2. Project layout
 
@@ -96,7 +97,7 @@ These checks do not require PICO or robot hardware. They validate parsing, trans
 Recommended prerequisites:
 
 - PICO 4 Ultra
-- XRoboToolkit PICO APK
+- XRoboToolkit PICO APK installed in PICO
 - PICO and PC on the same network
 - Windows firewall allows Python networking
 
@@ -223,6 +224,21 @@ Safety behavior:
 - --confirm is required
 - operator must type YES
 
+Control mode selection:
+
+```bash
+# Default explicit form
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --control-mode joint_position
+
+# Optional impedance mode (MVP safety gate requires --move-to-ready for real send)
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --control-mode joint_impedance
+```
+
+`joint_impedance` safety rule in this MVP:
+
+- dry-run: allowed without `--move-to-ready`
+- real send (`--enable-send`): `--move-to-ready` is mandatory
+
 Single-arm selection:
 
 ```bash
@@ -322,6 +338,7 @@ WARNING: real robot motion can cause injury or equipment damage. Use strict on-s
 - Keep emergency stop reachable.
 - Do not stand inside robot workspace.
 - Do not use --enable-send unless ready for real robot motion.
+- Do not use --control-mode joint_impedance for real send unless --move-to-ready is enabled.
 - Recalibrate after PICO recenter, restart, or operator posture/orientation change.
 - Release grip immediately if motion is unexpected.
 - Use Ctrl+C and physical emergency stop when needed.

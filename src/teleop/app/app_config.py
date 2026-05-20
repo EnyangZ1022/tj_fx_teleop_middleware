@@ -7,6 +7,7 @@ from teleop.transform.orientation_transform import OrientationTrackingConfig
 
 
 _ALLOWED_SINGLE_ARM_MODES = {None, "left", "right"}
+_ALLOWED_CONTROL_MODES = {"joint_position", "joint_impedance"}
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class FullTeleopAppConfig:
     ui_enabled: bool = False
     logging_enabled: bool = False
     teleop_mode: str = TeleopMode.POSITION_ONLY.value
+    control_mode: str = "joint_position"
     orientation_tracking: OrientationTrackingConfig = field(default_factory=OrientationTrackingConfig)
     single_arm_mode: str | None = None
     max_runtime_s: float | None = None
@@ -39,6 +41,13 @@ class FullTeleopAppConfig:
 
         teleop_mode = normalize_teleop_mode(self.teleop_mode)
         object.__setattr__(self, "teleop_mode", teleop_mode)
+
+        control_mode = str(self.control_mode).strip().lower()
+        if control_mode not in _ALLOWED_CONTROL_MODES:
+            raise ValueError(
+                f"control_mode must be one of {sorted(_ALLOWED_CONTROL_MODES)}, got {self.control_mode!r}"
+            )
+        object.__setattr__(self, "control_mode", control_mode)
 
         if not isinstance(self.orientation_tracking, OrientationTrackingConfig):
             raise ValueError("orientation_tracking must be an OrientationTrackingConfig instance")

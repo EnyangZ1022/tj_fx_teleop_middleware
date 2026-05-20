@@ -264,6 +264,21 @@ def test_initialize_without_pico_connection() -> None:
     assert app.teleop_provider is None
 
 
+def test_app_command_config_uses_control_mode_and_rate() -> None:
+    cfg = FullTeleopAppConfig(
+        connect_pico=False,
+        connect_robot=False,
+        dry_run=True,
+        control_mode="joint_impedance",
+        command_rate_hz=50.0,
+    )
+
+    app = FullTeleopApp(config=cfg)
+
+    assert app.robot_command_config.control_mode == "joint_impedance"
+    assert app.robot_command_config.ctrl_hz == 50
+
+
 def test_run_full_teleop_script_importable_without_side_effects() -> None:
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "run_full_teleop.py"
 
