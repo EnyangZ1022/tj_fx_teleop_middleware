@@ -62,6 +62,24 @@ Robot SDK-side units used in Stage 3 output:
 - position: millimeter
 - orientation: degree
 
+## Stage 10 hardware-validation mapping adjustment
+
+After first real robot validation, the forward mapping into robot SDK X was flipped.
+Y and Z signs were kept unchanged.
+
+Current fixed arm matrices used by default:
+
+Right arm:
+
+`A_right = [[0, 0, -1], [0, 1, 0], [1, 0, 0]]`
+
+Left arm:
+
+`A_left = [[0, 0, -1], [0, -1, 0], [-1, 0, 0]]`
+
+This fixed mapping is an MVP hardware-validation patch.
+A future user-frame calibration may replace this fixed mapping.
+
 ## Independent left/right calibration
 
 Left and right arm SDK frame origins are different. Because of this:

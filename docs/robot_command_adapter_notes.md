@@ -40,6 +40,22 @@ Do not use previous IK output as next reference.
 
 This policy is validated again in Stage 6C integration checks.
 
+## Stage 10 Optional ZSP IK Mode
+
+Stage 10 adds an optional IK solver strategy:
+
+- mode: `zsp_negative_z`
+- zsp_type: `1`
+- zsp_para: `[0, 0, -1, 0, 0, 0]`
+
+This mode is experimental and intended for real-hardware validation.
+
+Fixed reference is still passed and remains the fallback behavior.
+To revert to previous behavior, set either:
+
+- `enable_zsp=false`, or
+- `mode=fixed_reference_only`
+
 ## Startup Dependency
 
 Before Stage 6B command sending, robot startup should pass Stage 6B-pre and reach ready pose safely.

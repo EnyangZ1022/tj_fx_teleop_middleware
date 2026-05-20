@@ -36,6 +36,9 @@ No blocking waits are used for UI updates.
 - Calibration status: per-arm readiness state.
 - Safety state: current high-level gate/state-machine status.
 
+Robot SDK positions are in millimeters and can be far from origin depending on calibration anchors.
+If points appear out of frame, increase camera/grid range settings.
+
 ## Dependencies
 
 - PySide6
@@ -59,3 +62,12 @@ python scripts/run_teleop_ui_from_log.py --input <jsonl>
 ## Config
 
 Stage 8 UI defaults are defined in `configs/ui.yaml` and disabled by default (`ui.enabled=false`).
+
+Stage 10 adds configurable view-range fields:
+
+- `camera_distance_mm`
+- `grid_size_mm`
+- `grid_spacing_mm`
+- `auto_center`
+
+UI refresh remains 20 Hz by default.

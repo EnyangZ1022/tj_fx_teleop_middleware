@@ -60,8 +60,8 @@ def test_reference_relative_target_is_not_cumulative() -> None:
         scale=1.0,
     )
 
-    assert target_1 == pytest.approx((1100.0, 2000.0, 3000.0))
-    assert target_2 == pytest.approx((1100.0, 2000.0, 3000.0))
+    assert target_1 == pytest.approx((900.0, 2000.0, 3000.0))
+    assert target_2 == pytest.approx((900.0, 2000.0, 3000.0))
 
 
 def test_orientation_is_frozen_in_position_only_mode() -> None:
@@ -79,5 +79,5 @@ def test_orientation_is_frozen_in_position_only_mode() -> None:
     target = transformer.make_target(moved_frame, feedback, calibration)
 
     assert target.right is not None
-    assert target.right.position_xyz == pytest.approx((1100.0, 2000.0, 3000.0))
+    assert target.right.position_xyz == pytest.approx((900.0, 2000.0, 3000.0))
     assert target.right.orientation_abc == pytest.approx((10.0, 20.0, 30.0))

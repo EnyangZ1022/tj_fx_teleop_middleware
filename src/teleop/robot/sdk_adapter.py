@@ -60,8 +60,16 @@ class RobotSDKReadOnlyAdapter:
             if hasattr(self.robot, "local_log_switch"):
                 self.robot.local_log_switch("0")
 
-        self.left_kine = ArmKinematicsAdapter(self._config.left_arm, self._config.kine_cfg)
-        self.right_kine = ArmKinematicsAdapter(self._config.right_arm, self._config.kine_cfg)
+        self.left_kine = ArmKinematicsAdapter(
+            arm=self._config.left_arm,
+            kine_cfg_path=self._config.kine_cfg,
+            disable_kine_logs=self._config.disable_kine_logs,
+        )
+        self.right_kine = ArmKinematicsAdapter(
+            arm=self._config.right_arm,
+            kine_cfg_path=self._config.kine_cfg,
+            disable_kine_logs=self._config.disable_kine_logs,
+        )
         self.left_kine.initialize()
         self.right_kine.initialize()
 

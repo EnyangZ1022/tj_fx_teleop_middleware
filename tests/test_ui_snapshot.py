@@ -116,3 +116,7 @@ def test_ui_config_defaults() -> None:
     cfg = UIConfig()
     assert cfg.enabled is False
     assert cfg.update_hz == 20.0
+    assert cfg.camera_distance_mm == 5000.0
+    assert cfg.grid_size_mm == 4000.0
+    assert cfg.grid_spacing_mm == 200.0
+    assert cfg.auto_center is True

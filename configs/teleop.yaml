@@ -43,7 +43,7 @@ coordinate_transform:
         y: up
         z: right
       axis_matrix_from_user:
-        - [0, 0, 1]
+        - [0, 0, -1]
         - [0, 1, 0]
         - [1, 0, 0]
       scale: 1.0
@@ -53,7 +53,7 @@ coordinate_transform:
         y: down
         z: left
       axis_matrix_from_user:
-        - [0, 0, 1]
+        - [0, 0, -1]
         - [0, -1, 0]
         - [-1, 0, 0]
       scale: 1.0

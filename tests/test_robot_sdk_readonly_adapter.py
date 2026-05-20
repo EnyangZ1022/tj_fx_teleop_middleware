@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 import types
 
@@ -110,6 +111,11 @@ class _FakeMarvinKine:
         self.load_calls: list[tuple[int, str]] = []
         self.initial_calls: list[tuple[int, list, list, list]] = []
         self.fk_calls: list[list[float]] = []
+        self.log_switch_calls: list[int] = []
+
+    def log_switch(self, flag: int):
+        self.log_switch_calls.append(flag)
+        return 1
 
     def load_config(self, arm_type: int, config_path: str):
         self.load_calls.append((arm_type, config_path))
@@ -193,6 +199,54 @@ def test_connect_success_and_clear_errors_called(monkeypatch) -> None:
     assert adapter.robot.clear_set_calls == 1
     assert adapter.robot.send_cmd_calls == 1
     assert adapter.robot.clear_error_calls == ["A", "B"]
+
+
+def test_connect_disables_robot_and_kine_logs_by_default(monkeypatch) -> None:
+    _install_fake_fx_robot(monkeypatch, _FakeRobotBase)
+    _install_fake_fx_kine(monkeypatch)
+
+    logging.getLogger("debug_printer").setLevel(logging.INFO)
+
+    cfg = RobotSDKConfig(connect_check_samples=3, connect_check_interval_s=0.0, connect_settle_s=0.0)
+    adapter = RobotSDKReadOnlyAdapter(cfg)
+    adapter.connect()
+
+    assert adapter.robot is not None
+    assert adapter.robot.log_switch_calls == ["0"]
+    assert adapter.robot.local_log_switch_calls == ["0"]
+
+    assert adapter.left_kine is not None
+    assert adapter.right_kine is not None
+    assert adapter.left_kine._kine.log_switch_calls == [0]
+    assert adapter.right_kine._kine.log_switch_calls == [0]
+    assert logging.getLogger("debug_printer").level == logging.ERROR
+
+
+def test_connect_can_keep_robot_and_kine_logs_enabled(monkeypatch) -> None:
+    _install_fake_fx_robot(monkeypatch, _FakeRobotBase)
+    _install_fake_fx_kine(monkeypatch)
+
+    logging.getLogger("debug_printer").setLevel(logging.INFO)
+
+    cfg = RobotSDKConfig(
+        connect_check_samples=3,
+        connect_check_interval_s=0.0,
+        connect_settle_s=0.0,
+        disable_sdk_logs=False,
+        disable_kine_logs=False,
+    )
+    adapter = RobotSDKReadOnlyAdapter(cfg)
+    adapter.connect()
+
+    assert adapter.robot is not None
+    assert adapter.robot.log_switch_calls == []
+    assert adapter.robot.local_log_switch_calls == []
+
+    assert adapter.left_kine is not None
+    assert adapter.right_kine is not None
+    assert adapter.left_kine._kine.log_switch_calls == []
+    assert adapter.right_kine._kine.log_switch_calls == []
+    assert logging.getLogger("debug_printer").level == logging.INFO
 
 
 def test_connect_failure_raises_runtime_error(monkeypatch) -> None:

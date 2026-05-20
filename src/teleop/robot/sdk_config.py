@@ -15,6 +15,7 @@ class RobotSDKConfig:
     connect_check_interval_s: float = 0.1
     connect_settle_s: float = 0.5
     disable_sdk_logs: bool = True
+    disable_kine_logs: bool = True
 
     left_ik_reference_q_deg: tuple[float, ...] = (90, -90, -90, -90, 0, 0, 0)
     right_ik_reference_q_deg: tuple[float, ...] = (90, 90, -90, -90, 0, 0, 0)

@@ -105,7 +105,7 @@ def test_calibration_stores_anchors_for_both_arms() -> None:
     assert calibration.right.source_frame_id == 42
 
 
-def test_right_arm_forward_motion_increases_robot_x() -> None:
+def test_right_arm_forward_motion_decreases_robot_x() -> None:
     transformer = PositionOnlyCoordinateTransformer()
     calibration = transformer.create_calibration(
         _teleop_frame(right_xyz=(0.0, 0.0, 0.0)),
@@ -118,7 +118,7 @@ def test_right_arm_forward_motion_increases_robot_x() -> None:
 
     assert target.right is not None
     assert target.right.valid is True
-    assert target.right.position_xyz == pytest.approx((1100.0, 2000.0, 3000.0))
+    assert target.right.position_xyz == pytest.approx((900.0, 2000.0, 3000.0))
     assert target.right.orientation_abc == pytest.approx((10.0, 20.0, 30.0))
 
 
@@ -168,7 +168,7 @@ def test_left_arm_axis_mapping_and_frozen_orientation() -> None:
     assert up_target.left is not None
     assert right_target.left is not None
 
-    assert forward_target.left.position_xyz == pytest.approx((1100.0, 2000.0, 3000.0))
+    assert forward_target.left.position_xyz == pytest.approx((900.0, 2000.0, 3000.0))
     assert up_target.left.position_xyz == pytest.approx((1000.0, 1900.0, 3000.0))
     assert right_target.left.position_xyz == pytest.approx((1000.0, 2000.0, 2900.0))
 
@@ -189,7 +189,7 @@ def test_right_arm_scale_applied() -> None:
     target = transformer.make_target(moved, None, calibration)
 
     assert target.right is not None
-    assert target.right.position_xyz == pytest.approx((1200.0, 2000.0, 3000.0))
+    assert target.right.position_xyz == pytest.approx((800.0, 2000.0, 3000.0))
 
 
 def test_custom_r_user_from_pico_is_used_before_arm_mapping() -> None:
@@ -210,7 +210,7 @@ def test_custom_r_user_from_pico_is_used_before_arm_mapping() -> None:
     target = transformer.make_target(moved, None, calibration)
 
     assert target.right is not None
-    assert target.right.position_xyz == pytest.approx((1100.0, 2000.0, 3000.0))
+    assert target.right.position_xyz == pytest.approx((900.0, 2000.0, 3000.0))
 
 
 def test_make_target_without_calibration_returns_none_targets() -> None:

@@ -11,3 +11,7 @@ ui:
     ball_size: 10.0
     history_length: 200
     coordinate_unit: "mm"
+    camera_distance_mm: 5000.0
+    grid_size_mm: 4000.0
+    grid_spacing_mm: 200.0
+    auto_center: true

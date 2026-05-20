@@ -19,10 +19,10 @@
 
 ## C. Coordinate Mapping
 
-- [ ] Right hand +forward maps to right SDK +X.
+- [ ] Right hand +forward maps to right SDK -X.
 - [ ] Right hand +up maps to right SDK +Y.
 - [ ] Right hand +right maps to right SDK +Z.
-- [ ] Left hand +forward maps to left SDK +X.
+- [ ] Left hand +forward maps to left SDK -X.
 - [ ] Left hand +up maps to left SDK -Y.
 - [ ] Left hand +right maps to left SDK -Z.
 

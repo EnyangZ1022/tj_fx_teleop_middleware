@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from teleop.robot.ik_config import IKSolverConfig
 
 
 _ALLOWED_CONTROL_MODES = {"joint_position", "joint_impedance"}
@@ -30,6 +32,7 @@ class RobotCommandConfig:
     joint_d: tuple[float, ...] = (0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2)
     vel_ratio: int = 20
     acc_ratio: int = 20
+    ik_solver: IKSolverConfig = field(default_factory=IKSolverConfig)
 
     def __post_init__(self) -> None:
         mode = str(self.control_mode).strip().lower()
@@ -53,6 +56,8 @@ class RobotCommandConfig:
 
         object.__setattr__(self, "joint_k", _normalize_tuple7("joint_k", self.joint_k))
         object.__setattr__(self, "joint_d", _normalize_tuple7("joint_d", self.joint_d))
+        if not isinstance(self.ik_solver, IKSolverConfig):
+            raise ValueError("ik_solver must be an IKSolverConfig instance")
 
 
 __all__ = ["RobotCommandConfig"]

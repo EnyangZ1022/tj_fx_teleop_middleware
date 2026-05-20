@@ -16,6 +16,10 @@ class UIConfig:
     ball_size: float = 10.0
     history_length: int = 200
     coordinate_unit: str = "mm"
+    camera_distance_mm: float = 5000.0
+    grid_size_mm: float = 4000.0
+    grid_spacing_mm: float = 200.0
+    auto_center: bool = True
 
     def __post_init__(self) -> None:
         if float(self.update_hz) <= 0.0:
@@ -28,6 +32,12 @@ class UIConfig:
             raise ValueError("history_length must be positive")
         if not str(self.coordinate_unit).strip():
             raise ValueError("coordinate_unit must not be empty")
+        if float(self.camera_distance_mm) <= 0.0:
+            raise ValueError("camera_distance_mm must be positive")
+        if float(self.grid_size_mm) <= 0.0:
+            raise ValueError("grid_size_mm must be positive")
+        if float(self.grid_spacing_mm) <= 0.0:
+            raise ValueError("grid_spacing_mm must be positive")
 
     def timer_interval_ms(self) -> int:
         return max(1, int(round(1000.0 / float(self.update_hz))))

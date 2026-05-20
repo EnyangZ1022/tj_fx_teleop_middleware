@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -34,13 +35,19 @@ def _import_marvin_kine_class():
     return module.Marvin_Kine
 
 
+def _quiet_fx_kine_python_logger() -> None:
+    # fx_kine uses logger name "debug_printer" and INFO logs are too noisy for runtime loops.
+    logging.getLogger("debug_printer").setLevel(logging.ERROR)
+
+
 class ArmKinematicsAdapter:
     """SDK-backed FK adapter for one arm."""
 
-    def __init__(self, arm: str, kine_cfg_path: str):
+    def __init__(self, arm: str, kine_cfg_path: str, disable_kine_logs: bool = True):
         self._arm = arm.strip().upper()
         self._arm_index = sdk_arm_to_index(self._arm)
         self._kine_cfg_path = str(kine_cfg_path)
+        self._disable_kine_logs = bool(disable_kine_logs)
         self._kine = None
         self._initialized = False
 
@@ -50,7 +57,18 @@ class ArmKinematicsAdapter:
 
     def initialize(self) -> None:
         MarvinKine = _import_marvin_kine_class()
+
+        if self._disable_kine_logs:
+            _quiet_fx_kine_python_logger()
+
         kine = MarvinKine()
+
+        if self._disable_kine_logs and hasattr(kine, "log_switch"):
+            try:
+                kine.log_switch(0)
+            except Exception:
+                # Best effort only; some wrappers/platforms may not expose this API reliably.
+                pass
 
         cfg_path = Path(self._kine_cfg_path)
         if not cfg_path.is_absolute():

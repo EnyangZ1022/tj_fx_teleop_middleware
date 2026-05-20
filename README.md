@@ -34,6 +34,8 @@ Stage 8 adds an optional PySide6 + PyQtGraph diagnostic UI that visualizes dual-
 
 Stage 9 fixes integration semantics (safety units in mm/mm_s and axisClick rising-edge calibration trigger) and adds the full orchestration entrypoint that connects all stages with safe dry-run defaults.
 
+Stage 10 applies first real-hardware validation fixes: forward-sign mapping adjustment, optional IK ZSP solver mode (with fixed-reference fallback), and larger UI 3D default view range.
+
 ## Pico Interface Notes
 
 See `docs/pico_interface_notes.md` for currently confirmed protocol and coordinate assumptions.
@@ -65,6 +67,10 @@ See `docs/robot_startup_ready_pose_notes.md` for Stage 6B-pre startup scope, rea
 ## Robot Command Adapter Notes
 
 See `docs/robot_command_adapter_notes.md` for Stage 6B command adapter flow, fixed IK reference policy, and send safety limits.
+
+## IK ZSP Mode Notes
+
+See `docs/ik_zsp_mode_notes.md` for Stage 10 optional ZSP IK strategy details, fallback behavior, and rollback instructions.
 
 ## XRoboToolkit Upstream Audit
 
@@ -167,6 +173,12 @@ Stage 9 full-app defaults are safe by design:
 - logging is disabled by default
 - calibration trigger uses axisClick rising edge (menuButton unused in MVP)
 - real robot command send requires explicit `--enable-send --confirm` and typing `YES`
+
+Stage 10 hardware-validation note:
+
+- after first real robot validation, forward mapping into robot SDK X was flipped
+- Y and Z signs were kept unchanged
+- this fixed mapping may be replaced by future user-frame calibration
 
 PICO 4 Ultra hardware validation notes:
 

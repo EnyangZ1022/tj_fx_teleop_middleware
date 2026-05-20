@@ -13,6 +13,7 @@ robot_sdk:
     connect_check_interval_s: 0.1
     connect_settle_s: 0.5
     disable_sdk_logs: true
+    disable_kine_logs: true
 
   units:
     joint_angle: degree

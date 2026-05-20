@@ -15,13 +15,13 @@ MatrixLike = Sequence[Sequence[float]]
 VectorLike = Sequence[float]
 
 DEFAULT_RIGHT_AXIS_MATRIX_FROM_USER: tuple[tuple[float, float, float], ...] = (
-    (0.0, 0.0, 1.0),
+    (0.0, 0.0, -1.0),
     (0.0, 1.0, 0.0),
     (1.0, 0.0, 0.0),
 )
 
 DEFAULT_LEFT_AXIS_MATRIX_FROM_USER: tuple[tuple[float, float, float], ...] = (
-    (0.0, 0.0, 1.0),
+    (0.0, 0.0, -1.0),
     (0.0, -1.0, 0.0),
     (-1.0, 0.0, 0.0),
 )

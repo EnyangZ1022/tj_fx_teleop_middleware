@@ -12,7 +12,7 @@ The read-only adapter follows this sequence:
 
 1. connect to robot
 2. clear arm errors
-3. optionally disable SDK/local logs
+3. optionally disable SDK/local logs and kinematics logs
 4. initialize kinematics
 5. subscribe and verify frame updates
 6. read q and convert to xyzabc via FK

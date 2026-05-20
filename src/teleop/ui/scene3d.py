@@ -30,12 +30,17 @@ class TeleopScene3DWidget(GLViewWidget):
         self._dim_alpha = 0.12
 
         axis = float(self._config.axis_length_mm)
-        self.setCameraPosition(distance=max(250.0, axis * 4.0), elevation=18.0, azimuth=35.0)
+        self.setCameraPosition(
+            distance=max(250.0, float(self._config.camera_distance_mm)),
+            elevation=20.0,
+            azimuth=45.0,
+        )
         self.setBackgroundColor((16, 18, 22))
 
         self._grid = GLGridItem()
-        self._grid.setSize(x=axis * 2.0, y=axis * 2.0, z=axis * 2.0)
-        spacing = max(10.0, axis / 10.0)
+        grid_size = max(axis * 2.0, float(self._config.grid_size_mm))
+        self._grid.setSize(x=grid_size, y=grid_size, z=grid_size)
+        spacing = max(10.0, float(self._config.grid_spacing_mm))
         self._grid.setSpacing(x=spacing, y=spacing, z=spacing)
         self.addItem(self._grid)
 
@@ -81,6 +86,39 @@ class TeleopScene3DWidget(GLViewWidget):
             feedback_color=self._right_feedback_color,
             line_color=self._right_line_color,
         )
+
+        if bool(self._config.auto_center):
+            self._auto_center(snapshot)
+
+    def _auto_center(self, snapshot: TeleopVisualizationSnapshot) -> None:
+        points: list[tuple[float, float, float]] = []
+
+        for arm in (snapshot.left, snapshot.right):
+            if arm.target_valid and arm.target_xyz_mm is not None:
+                points.append(arm.target_xyz_mm)
+            if arm.feedback_valid and arm.feedback_xyz_mm is not None:
+                points.append(arm.feedback_xyz_mm)
+
+        if not points:
+            return
+
+        center = np.mean(np.asarray(points, dtype=float), axis=0)
+
+        try:
+            center_opt = self.opts.get("center") if hasattr(self, "opts") else None
+            if center_opt is not None and hasattr(center_opt, "setX"):
+                center_opt.setX(float(center[0]))
+                center_opt.setY(float(center[1]))
+                center_opt.setZ(float(center[2]))
+                return
+        except Exception:
+            pass
+
+        try:
+            self.pan(float(center[0]), float(center[1]), float(center[2]), relative=False)
+        except Exception:
+            # Auto-center is best-effort only and must not break UI updates.
+            pass
 
     def _update_arm(
         self,

@@ -18,5 +18,16 @@ robot_command:
     joint_k: [12, 12, 12, 12, 12, 12, 12]
     joint_d: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]
 
+  ik_solver:
+    mode: "zsp_negative_z"
+    enable_zsp: true
+    zsp_type: 1
+    zsp_para: [0, 0, -1, 0, 0, 0]
+    keep_fixed_reference: true
+
+    fallback:
+      fixed_reference_only_available: true
+      note: "Set enable_zsp=false or mode=fixed_reference_only to revert to previous fixed-reference IK behavior."
+
   # Default must be dry-run and command disabled.
   # Manual operator action is required before real send.

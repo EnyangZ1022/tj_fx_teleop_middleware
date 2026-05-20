@@ -51,6 +51,8 @@ def _new_result(dry_run: bool) -> dict[str, Any]:
         "right_reason": "not_processed",
         "left_q_deg": None,
         "right_q_deg": None,
+        "left_solver_note": "",
+        "right_solver_note": "",
     }
 
 
@@ -80,8 +82,8 @@ class RobotCommandAdapter:
         if not self._sdk_adapter.left_kine.is_initialized or not self._sdk_adapter.right_kine.is_initialized:
             raise RuntimeError("Kinematics adapters must be initialized")
 
-        self.left_ik_adapter = ArmIKAdapter(self._sdk_adapter.left_kine)
-        self.right_ik_adapter = ArmIKAdapter(self._sdk_adapter.right_kine)
+        self.left_ik_adapter = ArmIKAdapter(self._sdk_adapter.left_kine, config=self._config.ik_solver)
+        self.right_ik_adapter = ArmIKAdapter(self._sdk_adapter.right_kine, config=self._config.ik_solver)
 
         self.reset_last_sent()
         self._commands_enabled = bool(self._config.command_enabled)
@@ -167,7 +169,7 @@ class RobotCommandAdapter:
         now = int(time.time_ns() if now_ns is None else now_ns)
         old_time_ns = self.last_send_time_ns
 
-        left_sent, left_reason, left_q = self._process_side(
+        left_sent, left_reason, left_q, left_solver_note = self._process_side(
             side="left",
             arm=self._sdk_adapter._config.left_arm,
             target=command.left,
@@ -180,7 +182,7 @@ class RobotCommandAdapter:
             dry_run=dry_run,
         )
 
-        right_sent, right_reason, right_q = self._process_side(
+        right_sent, right_reason, right_q, right_solver_note = self._process_side(
             side="right",
             arm=self._sdk_adapter._config.right_arm,
             target=command.right,
@@ -199,6 +201,8 @@ class RobotCommandAdapter:
         result["right_reason"] = right_reason
         result["left_q_deg"] = left_q
         result["right_q_deg"] = right_q
+        result["left_solver_note"] = left_solver_note
+        result["right_solver_note"] = right_solver_note
 
         if left_sent and left_q is not None:
             self.last_sent_left_q_deg = left_q
@@ -226,54 +230,55 @@ class RobotCommandAdapter:
         old_time_ns: int | None,
         robot: Any,
         dry_run: bool,
-    ) -> tuple[bool, str, tuple[float, float, float, float, float, float, float] | None]:
+    ) -> tuple[bool, str, tuple[float, float, float, float, float, float, float] | None, str]:
         if target is None:
-            return False, "no_target", None
+            return False, "no_target", None, ""
 
         if not send_allowed:
-            return False, "send_disabled", None
+            return False, "send_disabled", None, ""
 
         if ik_adapter is None:
-            return False, "ik_adapter_missing", None
+            return False, "ik_adapter_missing", None, "ik_adapter_missing"
 
         valid, reason = _validate_arm_target(target)
         if not valid:
-            return False, reason, None
+            return False, reason, None, ""
 
         q = ik_adapter.solve_xyzabc_mm_deg(
             position_xyz_mm=target.position_xyz_mm,
             orientation_abc_deg=target.orientation_abc_deg,
             ik_reference_q_deg=target.ik_reference_q_deg,
         )
+        solver_note = str(getattr(ik_adapter, "last_solver_note", ""))
         if q is None:
-            return False, "ik_failed", None
+            return False, "ik_failed", None, solver_note
 
         if len(q) != 7:
-            return False, "invalid_ik_result", None
+            return False, "invalid_ik_result", None, solver_note
 
         q7 = _normalize_q7(q)
 
         if last_q is not None:
             delta = _max_abs_joint_delta(q7, last_q)
             if delta > float(self._config.max_joint_step_deg):
-                return False, "joint_step_limit", q7
+                return False, "joint_step_limit", q7, solver_note
 
             if old_time_ns is not None:
                 dt_s = float(now_ns - old_time_ns) / 1_000_000_000.0
                 if dt_s <= 0.0:
-                    return False, "invalid_dt", q7
+                    return False, "invalid_dt", q7, solver_note
                 max_velocity = delta / dt_s
                 if max_velocity > float(self._config.max_joint_velocity_deg_s):
-                    return False, "joint_velocity_limit", q7
+                    return False, "joint_velocity_limit", q7, solver_note
 
         if dry_run:
-            return False, "dry_run", q7
+            return False, "dry_run", q7, solver_note
 
         try:
             send_joint_command(robot=robot, arm=arm, joints_deg=q7)
-            return True, "sent", q7
+            return True, "sent", q7, solver_note
         except Exception:
-            return False, "send_failed", q7
+            return False, "send_failed", q7, solver_note
 
     def pause(self) -> None:
         self.disable_commands()

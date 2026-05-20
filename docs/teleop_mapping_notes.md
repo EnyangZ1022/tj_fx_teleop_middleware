@@ -39,3 +39,11 @@ If Pico tracking is lost, pose may become all zeros. Zero pose and invalid pose 
 ## Coordinate Assumption
 
 Stage 2 preserves Pico pose as Pico-frame pose. No robot coordinate transform is performed yet. Future coordinate calibration may use SDK utilities if available.
+
+## Stage 10 Hardware Validation Note
+
+After first real robot validation, the downstream coordinate-transform layer flipped forward mapping into robot SDK X.
+Y and Z signs were kept unchanged.
+
+This project still keeps Stage 2 as pure input-semantic mapping.
+The fixed arm mapping may be replaced later by a user-frame calibration workflow.

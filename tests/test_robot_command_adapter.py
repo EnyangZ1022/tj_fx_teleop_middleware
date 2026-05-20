@@ -276,12 +276,13 @@ def test_send_command_rejects_when_not_connected() -> None:
 
 
 def test_prepare_uses_arm_ik_adapter_class(monkeypatch) -> None:
-    created = {"count": 0}
+    created = {"count": 0, "modes": []}
 
     class _FakeArmIKAdapterCtor:
-        def __init__(self, kinematics_adapter):
+        def __init__(self, kinematics_adapter, config=None):
             _ = kinematics_adapter
             created["count"] += 1
+            created["modes"].append(getattr(config, "mode", None))
 
         def solve_xyzabc_mm_deg(self, position_xyz_mm, orientation_abc_deg, ik_reference_q_deg):
             _ = (position_xyz_mm, orientation_abc_deg, ik_reference_q_deg)
@@ -294,3 +295,4 @@ def test_prepare_uses_arm_ik_adapter_class(monkeypatch) -> None:
     adapter.prepare()
 
     assert created["count"] == 2
+    assert created["modes"] == ["zsp_negative_z", "zsp_negative_z"]

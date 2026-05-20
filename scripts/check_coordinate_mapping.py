@@ -22,13 +22,14 @@ def main() -> None:
 
     print("Stage 6C coordinate mapping check (user frame -> arm SDK delta)")
     print("Assumed user frame from received data: +X right, +Y up, +Z forward/in")
+    print("Stage 10 hardware validation patch: user +Z forward maps to robot -X for both arms")
     print("")
 
     print("Right arm mapping table:")
     print(f"  user +X right    -> robot delta {_format_vec(right['user_+X'])}")
     print(f"  user +Y up       -> robot delta {_format_vec(right['user_+Y'])}")
     print(f"  user +Z forward  -> robot delta {_format_vec(right['user_+Z'])}")
-    print("  right: user +Z forward -> robot +X forward")
+    print("  right: user +Z forward -> robot -X")
     print("  right: user +Y up -> robot +Y up")
     print("  right: user +X right -> robot +Z right")
     print("")
@@ -37,7 +38,7 @@ def main() -> None:
     print(f"  user +X right    -> robot delta {_format_vec(left['user_+X'])}")
     print(f"  user +Y up       -> robot delta {_format_vec(left['user_+Y'])}")
     print(f"  user +Z forward  -> robot delta {_format_vec(left['user_+Z'])}")
-    print("  left: user +Z forward -> robot +X forward")
+    print("  left: user +Z forward -> robot -X")
     print("  left: user +Y up -> robot -Y because left SDK +Y is down")
     print("  left: user +X right -> robot -Z because left SDK +Z is left")
 
