@@ -139,3 +139,37 @@ def test_validate_runtime_args_rejects_orientation_filter_enable_disable_conflic
     message = module._validate_runtime_args(args)
 
     assert message == "--enable-orientation-filter and --disable-orientation-filter cannot be used together"
+
+
+def test_cli_joint_step_limit_mode_and_max_step_override() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args([
+        "--joint-step-limit-mode",
+        "ramp",
+        "--max-joint-step-deg",
+        "1.8",
+    ])
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert robot_cfg.joint_step_limit_mode == "ramp"
+    assert robot_cfg.max_joint_step_deg == 1.8
+
+
+def test_cli_joint_step_limit_defaults_preserve_robot_command_default() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args([])
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert robot_cfg.joint_step_limit_mode == "reject"
+    assert robot_cfg.max_joint_step_deg == module.RobotCommandConfig().max_joint_step_deg
+
+
+def test_validate_runtime_args_rejects_non_positive_max_joint_step_deg() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--max-joint-step-deg", "0"])
+    message = module._validate_runtime_args(args)
+
+    assert message == "--max-joint-step-deg must be > 0"

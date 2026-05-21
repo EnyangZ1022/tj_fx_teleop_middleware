@@ -81,6 +81,7 @@ def test_command_safety_defaults_and_adapter_blocking() -> None:
     assert errors == []
     assert cfg.dry_run is True
     assert cfg.command_enabled is False
+    assert cfg.joint_step_limit_mode == "reject"
 
     sdk_adapter = _FakeSDKAdapter()
     adapter = RobotCommandAdapter(

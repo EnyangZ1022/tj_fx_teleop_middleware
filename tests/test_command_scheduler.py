@@ -104,10 +104,10 @@ def test_scheduler_attaches_fixed_ik_reference_and_keeps_it_fixed() -> None:
     assert cmd1.left is not None and cmd1.right is not None
     assert cmd2.left is not None and cmd2.right is not None
 
-    assert cmd1.left.ik_reference_q_deg == (90.0, -90.0, -90.0, -90.0, 0.0, 0.0, 0.0)
-    assert cmd1.right.ik_reference_q_deg == (90.0, 90.0, -90.0, -90.0, 0.0, 0.0, 0.0)
-    assert cmd2.left.ik_reference_q_deg == (90.0, -90.0, -90.0, -90.0, 0.0, 0.0, 0.0)
-    assert cmd2.right.ik_reference_q_deg == (90.0, 90.0, -90.0, -90.0, 0.0, 0.0, 0.0)
+    assert cmd1.left.ik_reference_q_deg == (90.0, -60.0, -90.0, -90.0, -30.0, 0.0, 0.0)
+    assert cmd1.right.ik_reference_q_deg == (90.0, 60.0, -90.0, -90.0, 30.0, 0.0, 0.0)
+    assert cmd2.left.ik_reference_q_deg == (90.0, -60.0, -90.0, -90.0, -30.0, 0.0, 0.0)
+    assert cmd2.right.ik_reference_q_deg == (90.0, 60.0, -90.0, -90.0, 30.0, 0.0, 0.0)
 
     assert diag1.used_zero_order_hold is False
     assert diag2.used_zero_order_hold is True

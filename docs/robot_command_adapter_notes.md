@@ -67,10 +67,23 @@ Before Stage 6B command sending, robot startup should pass Stage 6B-pre and reac
 - control_mode defaults to `joint_position`
 - IK failure rejects command
 - invalid target rejects command
-- joint step limit rejects large jumps
+- joint step limit defaults to `reject` and rejects large jumps
+- optional `ramp` mode clips excessive per-joint deltas to an intermediate command
 - joint velocity limit rejects excessive speed
 - pause stops sending new commands
 - emergency stop is physical; software side only blocks sending and can disconnect
+
+## Joint Step Limit Modes
+
+`joint_step_limit_mode` supports two behaviors:
+
+- `reject` (default):
+	- if max absolute joint delta exceeds `max_joint_step_deg`, reject with `joint_step_limit`.
+- `ramp` (experimental):
+	- if delta exceeds `max_joint_step_deg`, clip each joint delta into `[-max_joint_step_deg, +max_joint_step_deg]` and send the clipped intermediate q.
+	- velocity limit checks are still enforced on the clipped q before sending.
+
+Ramp mode is a recovery/smoothing strategy. It may lag behind fast-moving teleop targets because the robot follows bounded joint-space increments.
 
 ## Control Modes
 

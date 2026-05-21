@@ -15,6 +15,7 @@ from teleop.app import FullTeleopApp, FullTeleopAppConfig
 from teleop.core.teleop_mode import TeleopMode
 from teleop.filtering import OrientationFilterConfig
 from teleop.logging import LoggingConfig
+from teleop.robot import RobotCommandConfig
 from teleop.transform.orientation_transform import OrientationTrackingConfig
 from teleop.ui.snapshot import LatestSnapshotStore
 from teleop.ui.ui_config import UIConfig
@@ -79,6 +80,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         help="Override orientation filter fallback dt in seconds (default 0.01)",
+    )
+    parser.add_argument(
+        "--joint-step-limit-mode",
+        choices=["reject", "ramp"],
+        default="reject",
+        help="Joint step-limit handling mode (reject default, ramp experimental)",
+    )
+    parser.add_argument(
+        "--max-joint-step-deg",
+        type=float,
+        default=None,
+        help="Override max joint step limit in degrees (keeps config default when omitted)",
     )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
@@ -158,6 +171,15 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
     )
 
 
+def _build_robot_command_config(args: argparse.Namespace) -> RobotCommandConfig:
+    overrides: dict[str, float | str] = {
+        "joint_step_limit_mode": str(args.joint_step_limit_mode),
+    }
+    if args.max_joint_step_deg is not None:
+        overrides["max_joint_step_deg"] = float(args.max_joint_step_deg)
+    return RobotCommandConfig(**overrides)
+
+
 def _validate_runtime_args(args: argparse.Namespace) -> str | None:
     if bool(args.enable_orientation_filter) and bool(args.disable_orientation_filter):
         return "--enable-orientation-filter and --disable-orientation-filter cannot be used together"
@@ -184,6 +206,9 @@ def _validate_runtime_args(args: argparse.Namespace) -> str | None:
     if args.orientation_filter_fallback_dt is not None and float(args.orientation_filter_fallback_dt) <= 0.0:
         return "--orientation-filter-fallback-dt must be > 0"
 
+    if args.max_joint_step_deg is not None and float(args.max_joint_step_deg) <= 0.0:
+        return "--max-joint-step-deg must be > 0"
+
     return None
 
 
@@ -201,9 +226,13 @@ def main() -> int:
             return 1
 
     app_config = _build_app_config(args)
+    robot_command_config = _build_robot_command_config(args)
 
     print(f"Control mode: {app_config.control_mode}")
     print(f"Teleop mode: {app_config.teleop_mode}")
+    print(f"joint_step_limit_mode: {robot_command_config.joint_step_limit_mode}")
+    print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
+    print(f"max_joint_velocity_deg_s: {float(robot_command_config.max_joint_velocity_deg_s):.3f}")
     if app_config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:
         print(f"Orientation filter: {'enabled' if bool(app_config.orientation_filter.enabled) else 'disabled'}")
         print(f"orientation_filter_tau_s: {float(app_config.orientation_filter.tau_s):.5f}")
@@ -240,6 +269,7 @@ def main() -> int:
 
     app = FullTeleopApp(
         config=app_config,
+        robot_command_config=robot_command_config,
         logging_config=logging_config,
         ui_config=ui_config,
         snapshot_store=snapshot_store,

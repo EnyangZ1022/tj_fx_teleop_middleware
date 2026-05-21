@@ -22,6 +22,7 @@ Diagnostic UI and asynchronous logging are supported as optional tools.
 - Experimental position+orientation teleop mode (explicit opt-in)
 - Quaternion SO(3) Slerp low-pass orientation filter in position_orientation mode
 - Robot command control mode selection (`joint_position` default, optional `joint_impedance`)
+- Joint step-limit mode selection (`reject` default, optional experimental `ramp`)
 
 ## 2. Project layout
 
@@ -234,6 +235,22 @@ python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --ena
 # Optional impedance mode (MVP safety gate requires --move-to-ready for real send)
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --control-mode joint_impedance
 ```
+
+Joint step-limit handling:
+
+```bash
+# Default safe behavior: reject oversized joint steps
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --joint-step-limit-mode reject
+
+# Experimental behavior: ramp oversized IK jumps with bounded per-joint increments
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --joint-step-limit-mode ramp --max-joint-step-deg 1.8
+```
+
+Notes:
+
+- `--joint-step-limit-mode reject` is the default.
+- `--joint-step-limit-mode ramp` clips each joint delta to `[-max_joint_step_deg, +max_joint_step_deg]` and sends an intermediate q.
+- ramp mode still applies joint velocity limits and may feel laggy when targets move quickly.
 
 `joint_impedance` safety rule in this MVP:
 

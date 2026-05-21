@@ -69,6 +69,15 @@ Plots are intentionally split by arm/metric to stay readable:
 - `q_step_deg.png`
 - `q_velocity_deg_s.png`
 
+When runtime command logging includes step-limit diagnostics, use these fields to explain apparent "stuck" or lag behavior:
+
+- `command_left_step_delta_deg` / `command_right_step_delta_deg`
+- `command_left_step_ramped` / `command_right_step_ramped`
+- `command_left_candidate_q_deg` / `command_right_candidate_q_deg`
+- `command_left_sent_q_deg` / `command_right_sent_q_deg`
+
+In `joint_step_limit_mode=ramp`, `candidate_q_deg` can remain far from `sent_q_deg` while the adapter emits bounded intermediate joint commands.
+
 Example:
 
 ```bash

@@ -143,6 +143,7 @@ def validate_command_safety_defaults(command_config: object) -> list[str]:
     command_enabled = bool(getattr(command_config, "command_enabled", True))
     max_joint_step_deg = float(getattr(command_config, "max_joint_step_deg", 0.0))
     max_joint_velocity_deg_s = float(getattr(command_config, "max_joint_velocity_deg_s", 0.0))
+    joint_step_limit_mode = str(getattr(command_config, "joint_step_limit_mode", "")).strip().lower()
 
     if dry_run is not True:
         errors.append("dry_run should default to True")
@@ -153,6 +154,8 @@ def validate_command_safety_defaults(command_config: object) -> list[str]:
         errors.append("max_joint_step_deg must be positive")
     if max_joint_velocity_deg_s <= 0.0:
         errors.append("max_joint_velocity_deg_s must be positive")
+    if joint_step_limit_mode != "reject":
+        errors.append("joint_step_limit_mode should default to 'reject'")
 
     return errors
 

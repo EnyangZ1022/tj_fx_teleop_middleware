@@ -32,9 +32,15 @@ def max_joint_abs_error_deg(current_joints_deg: Sequence[float], target_joints_d
 def send_joint_command(robot: Any, arm: str, joints_deg: Sequence[float]) -> None:
     joints = _normalize_joint_tuple(joints_deg)
 
-    robot.clear_set()
-    robot.set_joint_cmd_pose(arm=arm, joints=list(joints))
-    robot.send_cmd()
+    clear_ok = robot.clear_set()
+    set_ok = robot.set_joint_cmd_pose(arm=arm, joints=list(joints))
+    send_ok = robot.send_cmd()
+    if not bool(clear_ok):
+        raise RuntimeError("clear_set failed before send_joint_command")
+    if not bool(set_ok):
+        raise RuntimeError("set_joint_cmd_pose failed")
+    if not bool(send_ok):
+        raise RuntimeError("send_cmd failed")
 
 
 def enter_position_mode(robot: Any, arm: str, vel_ratio: int, acc_ratio: int) -> None:

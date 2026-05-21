@@ -451,6 +451,24 @@ class FullTeleopApp:
                 ),
                 "command_left_q_deg": command_result.get("left_q_deg") if command_result is not None else None,
                 "command_right_q_deg": command_result.get("right_q_deg") if command_result is not None else None,
+                "command_left_candidate_q_deg": (
+                    command_result.get("left_candidate_q_deg") if command_result is not None else None
+                ),
+                "command_right_candidate_q_deg": (
+                    command_result.get("right_candidate_q_deg") if command_result is not None else None
+                ),
+                "command_left_sent_q_deg": command_result.get("left_sent_q_deg") if command_result is not None else None,
+                "command_right_sent_q_deg": command_result.get("right_sent_q_deg") if command_result is not None else None,
+                "command_left_step_delta_deg": (
+                    command_result.get("left_step_delta_deg") if command_result is not None else None
+                ),
+                "command_right_step_delta_deg": (
+                    command_result.get("right_step_delta_deg") if command_result is not None else None
+                ),
+                "command_left_step_ramped": command_result.get("left_step_ramped") if command_result is not None else None,
+                "command_right_step_ramped": (
+                    command_result.get("right_step_ramped") if command_result is not None else None
+                ),
                 "command_left_sent": command_result.get("left_sent") if command_result is not None else None,
                 "command_right_sent": command_result.get("right_sent") if command_result is not None else None,
                 "command_left_reason": command_result.get("left_reason") if command_result is not None else None,

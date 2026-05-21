@@ -11,18 +11,21 @@ from teleop.robot.command_config import RobotCommandConfig
 class _FakeRobot:
     def __init__(self):
         self.calls: list[tuple] = []
+        self.clear_set_return = 1
+        self.set_joint_cmd_pose_return = 1
+        self.send_cmd_return = 1
 
     def clear_set(self):
         self.calls.append(("clear_set",))
-        return 1
+        return int(self.clear_set_return)
 
     def set_joint_cmd_pose(self, arm: str, joints: list[float]):
         self.calls.append(("set_joint_cmd_pose", arm, tuple(float(v) for v in joints)))
-        return 1
+        return int(self.set_joint_cmd_pose_return)
 
     def send_cmd(self):
         self.calls.append(("send_cmd",))
-        return 1
+        return int(self.send_cmd_return)
 
     def set_vel_acc(self, arm: str, velRatio: int, AccRatio: int):
         self.calls.append(("set_vel_acc", arm, velRatio, AccRatio))
@@ -183,6 +186,9 @@ def test_joint_step_limit_rejects_large_delta() -> None:
     assert first["left_sent"] is True
     assert second["left_sent"] is False
     assert second["left_reason"] == "joint_step_limit"
+    assert second["left_step_ramped"] is False
+    assert second["left_step_delta_deg"] == 19.0
+    assert adapter.last_sent_left_q_deg == (1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)
 
     set_joint_calls = [c for c in sdk.robot.calls if c[0] == "set_joint_cmd_pose"]
     assert len(set_joint_calls) == 1
@@ -203,6 +209,140 @@ def test_joint_velocity_limit_rejects_excess_speed() -> None:
     assert first["left_sent"] is True
     assert second["left_sent"] is False
     assert second["left_reason"] == "joint_velocity_limit"
+
+
+def test_joint_step_limit_ramp_clips_and_sends() -> None:
+    adapter, sdk = _prepare_adapter(
+        RobotCommandConfig(
+            dry_run=False,
+            command_enabled=True,
+            joint_step_limit_mode="ramp",
+            max_joint_step_deg=2.0,
+            max_joint_velocity_deg_s=1000.0,
+        )
+    )
+    adapter.left_ik_adapter = _QueueIK([
+        (0, 0, 0, 0, 0, 0, 0),
+        (10, -10, 1, 0, 0, 0, 0),
+    ])
+
+    first = adapter.send_command(_dual(_arm_target(), None), now_ns=1_000_000_000)
+    second = adapter.send_command(_dual(_arm_target(101.0), None), now_ns=2_000_000_000)
+
+    assert first["left_sent"] is True
+    assert second["left_sent"] is True
+    assert second["left_reason"] == "sent"
+    assert second["left_step_ramped"] is True
+    assert second["left_step_delta_deg"] == 10.0
+    assert second["left_candidate_q_deg"] == (10.0, -10.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+    assert second["left_sent_q_deg"] == (2.0, -2.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+    assert second["left_q_deg"] == (2.0, -2.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+    assert adapter.last_sent_left_q_deg == (2.0, -2.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+
+    set_joint_calls = [c for c in sdk.robot.calls if c[0] == "set_joint_cmd_pose"]
+    assert len(set_joint_calls) == 2
+    assert set_joint_calls[1][2] == (2.0, -2.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+
+
+def test_joint_step_limit_ramp_does_not_bypass_velocity_limit() -> None:
+    adapter, _ = _prepare_adapter(
+        RobotCommandConfig(
+            dry_run=False,
+            command_enabled=True,
+            joint_step_limit_mode="ramp",
+            max_joint_step_deg=5.0,
+            max_joint_velocity_deg_s=20.0,
+        )
+    )
+    adapter.left_ik_adapter = _QueueIK([
+        (0, 0, 0, 0, 0, 0, 0),
+        (10, 0, 0, 0, 0, 0, 0),
+    ])
+
+    first = adapter.send_command(_dual(_arm_target(), None), now_ns=1_000_000_000)
+    second = adapter.send_command(_dual(_arm_target(101.0), None), now_ns=1_050_000_000)
+
+    assert first["left_sent"] is True
+    assert second["left_sent"] is False
+    assert second["left_reason"] == "joint_velocity_limit"
+    assert second["left_step_ramped"] is True
+    assert second["left_q_deg"] == (5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    assert adapter.last_sent_left_q_deg == (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+
+def test_joint_step_limit_ramp_send_failure_does_not_update_last_sent() -> None:
+    adapter, sdk = _prepare_adapter(
+        RobotCommandConfig(
+            dry_run=False,
+            command_enabled=True,
+            joint_step_limit_mode="ramp",
+            max_joint_step_deg=2.0,
+            max_joint_velocity_deg_s=1000.0,
+        )
+    )
+    adapter.left_ik_adapter = _QueueIK([
+        (0, 0, 0, 0, 0, 0, 0),
+        (10, 0, 0, 0, 0, 0, 0),
+    ])
+
+    first = adapter.send_command(_dual(_arm_target(), None), now_ns=1_000_000_000)
+    sdk.robot.send_cmd_return = 0
+    second = adapter.send_command(_dual(_arm_target(101.0), None), now_ns=2_000_000_000)
+
+    assert first["left_sent"] is True
+    assert second["left_sent"] is False
+    assert second["left_reason"] == "send_failed"
+    assert second["left_step_ramped"] is True
+    assert adapter.last_sent_left_q_deg == (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+
+def test_joint_step_limit_ramp_first_command_without_last_q_is_not_clipped() -> None:
+    adapter, sdk = _prepare_adapter(
+        RobotCommandConfig(
+            dry_run=False,
+            command_enabled=True,
+            joint_step_limit_mode="ramp",
+            max_joint_step_deg=2.0,
+            max_joint_velocity_deg_s=1000.0,
+        )
+    )
+    adapter.left_ik_adapter = _QueueIK([(10, -10, 1, 0, 0, 0, 0)])
+
+    result = adapter.send_command(_dual(_arm_target(), None), now_ns=1_000_000_000)
+
+    assert result["left_sent"] is True
+    assert result["left_reason"] == "sent"
+    assert result["left_step_delta_deg"] is None
+    assert result["left_step_ramped"] is False
+    assert result["left_q_deg"] == (10.0, -10.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+    assert adapter.last_sent_left_q_deg == (10.0, -10.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+
+    set_joint_calls = [c for c in sdk.robot.calls if c[0] == "set_joint_cmd_pose"]
+    assert len(set_joint_calls) == 1
+    assert set_joint_calls[0][2] == (10.0, -10.0, 1.0, 0.0, 0.0, 0.0, 0.0)
+
+
+def test_joint_step_limit_ramp_in_dry_run_keeps_state_unchanged() -> None:
+    adapter, _ = _prepare_adapter(
+        RobotCommandConfig(
+            dry_run=True,
+            command_enabled=False,
+            joint_step_limit_mode="ramp",
+            max_joint_step_deg=2.0,
+            max_joint_velocity_deg_s=1000.0,
+        )
+    )
+    adapter.left_ik_adapter = _QueueIK([(10, 0, 0, 0, 0, 0, 0)])
+    adapter.last_sent_left_q_deg = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    adapter.last_send_time_ns = 1_000_000_000
+
+    result = adapter.send_command(_dual(_arm_target(), None), now_ns=2_000_000_000)
+
+    assert result["left_sent"] is False
+    assert result["left_reason"] == "dry_run"
+    assert result["left_step_ramped"] is True
+    assert result["left_q_deg"] == (2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    assert adapter.last_sent_left_q_deg == (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 
 def test_pause_disables_future_send() -> None:
