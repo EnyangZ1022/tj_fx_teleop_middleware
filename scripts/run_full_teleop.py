@@ -14,6 +14,7 @@ if str(SRC_DIR) not in sys.path:
 from teleop.app import FullTeleopApp, FullTeleopAppConfig
 from teleop.core.teleop_mode import TeleopMode
 from teleop.logging import LoggingConfig
+from teleop.transform.orientation_transform import OrientationTrackingConfig
 from teleop.ui.snapshot import LatestSnapshotStore
 from teleop.ui.ui_config import UIConfig
 
@@ -49,6 +50,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["joint_position", "joint_impedance"],
         default="joint_position",
         help="Robot command control mode (joint_position default; joint_impedance requires extra safety checks)",
+    )
+    parser.add_argument(
+        "--orientation-algorithm",
+        choices=["absolute_matrix", "relative_rotvec"],
+        default="absolute_matrix",
+        help="Orientation tracking algorithm selector (absolute_matrix default)",
     )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
@@ -87,6 +94,11 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
     if bool(args.enable_orientation):
         teleop_mode = TeleopMode.POSITION_ORIENTATION.value
 
+    orientation_tracking = OrientationTrackingConfig(
+        enabled=(teleop_mode == TeleopMode.POSITION_ORIENTATION.value),
+        orientation_algorithm=str(args.orientation_algorithm),
+    )
+
     return FullTeleopAppConfig(
         robot_ip=str(args.robot_ip),
         connect_pico=not bool(args.no_pico),
@@ -99,6 +111,7 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         ui_enabled=bool(args.ui),
         logging_enabled=bool(args.logging),
         teleop_mode=teleop_mode,
+        orientation_tracking=orientation_tracking,
         control_mode=str(args.control_mode),
         single_arm_mode=side_mode,
         max_runtime_s=float(args.max_runtime_s) if args.max_runtime_s is not None else None,
@@ -144,6 +157,8 @@ def main() -> int:
     print(f"Teleop mode: {app_config.teleop_mode}")
     if bool(app_config.orientation_tracking.enabled):
         print("Orientation tracking: enabled")
+        print(f"  orientation_algorithm={app_config.orientation_tracking.orientation_algorithm}")
+        print(f"  use_calibration_offset={bool(app_config.orientation_tracking.use_calibration_offset)}")
         print(f"  rotation_scale={float(app_config.orientation_tracking.rotation_scale):.3f}")
         print(f"  max_total_angle_deg={float(app_config.orientation_tracking.max_total_angle_deg):.2f}")
         print(f"  max_step_angle_deg={float(app_config.orientation_tracking.max_step_angle_deg):.2f}")

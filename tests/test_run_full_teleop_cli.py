@@ -24,6 +24,7 @@ def test_cli_default_is_position_only() -> None:
     assert cfg.teleop_mode == "position_only"
     assert cfg.control_mode == "joint_position"
     assert cfg.orientation_tracking.enabled is False
+    assert cfg.orientation_tracking.orientation_algorithm == "absolute_matrix"
 
 
 def test_cli_teleop_mode_position_orientation() -> None:
@@ -34,6 +35,7 @@ def test_cli_teleop_mode_position_orientation() -> None:
 
     assert cfg.teleop_mode == "position_orientation"
     assert cfg.orientation_tracking.enabled is True
+    assert cfg.orientation_tracking.orientation_algorithm == "absolute_matrix"
 
 
 def test_cli_enable_orientation_shorthand() -> None:
@@ -44,6 +46,17 @@ def test_cli_enable_orientation_shorthand() -> None:
 
     assert cfg.teleop_mode == "position_orientation"
     assert cfg.orientation_tracking.enabled is True
+    assert cfg.orientation_tracking.orientation_algorithm == "absolute_matrix"
+
+
+def test_cli_orientation_algorithm_relative_rotvec() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--teleop-mode", "position_orientation", "--orientation-algorithm", "relative_rotvec"])
+    cfg = module._build_app_config(args)
+
+    assert cfg.orientation_tracking.enabled is True
+    assert cfg.orientation_tracking.orientation_algorithm == "relative_rotvec"
 
 
 def test_cli_control_mode_joint_impedance() -> None:

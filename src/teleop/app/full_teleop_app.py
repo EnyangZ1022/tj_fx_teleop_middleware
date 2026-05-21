@@ -221,6 +221,8 @@ class FullTeleopApp:
                     "logging_enabled": bool(self.logging_config.enabled),
                     "teleop_mode": str(self.config.teleop_mode),
                     "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
+                    "orientation_algorithm": str(self.config.orientation_tracking.orientation_algorithm),
+                    "orientation_use_calibration_offset": bool(self.config.orientation_tracking.use_calibration_offset),
                     "orientation_relative_mode": str(self.config.orientation_tracking.relative_mode),
                     "orientation_rotation_scale": float(self.config.orientation_tracking.rotation_scale),
                     "orientation_max_total_angle_deg": float(self.config.orientation_tracking.max_total_angle_deg),
@@ -386,6 +388,9 @@ class FullTeleopApp:
         self._latest_command_result = command_result
         self._previous_teleop_frame = teleop_frame
 
+        left_pose = teleop_frame.left.pose_pico if teleop_frame is not None else None
+        right_pose = teleop_frame.right.pose_pico if teleop_frame is not None else None
+
         self.logger.log_frame(
             "teleop_step",
             payload={
@@ -395,8 +400,14 @@ class FullTeleopApp:
                 "command_ready": bool(command_target is not None),
                 "teleop_mode": str(self.config.teleop_mode),
                 "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
+                "orientation_algorithm": str(self.config.orientation_tracking.orientation_algorithm),
+                "orientation_use_calibration_offset": bool(self.config.orientation_tracking.use_calibration_offset),
                 "left_relative_angle_deg": self._latest_orientation_debug["left"].get("relative_angle_deg"),
                 "right_relative_angle_deg": self._latest_orientation_debug["right"].get("relative_angle_deg"),
+                "pico_left_xyz_m": [left_pose.x, left_pose.y, left_pose.z] if left_pose is not None else None,
+                "pico_left_quat_xyzw": [left_pose.qx, left_pose.qy, left_pose.qz, left_pose.qw] if left_pose is not None else None,
+                "pico_right_xyz_m": [right_pose.x, right_pose.y, right_pose.z] if right_pose is not None else None,
+                "pico_right_quat_xyzw": [right_pose.qx, right_pose.qy, right_pose.qz, right_pose.qw] if right_pose is not None else None,
                 "feedback_left_xyz_mm": (
                     list(feedback.left.position_xyz)
                     if feedback is not None and feedback.left is not None

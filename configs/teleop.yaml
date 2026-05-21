@@ -7,6 +7,8 @@ teleop:
 
 orientation_tracking:
   enabled: false
+  orientation_algorithm: "absolute_matrix"
+  use_calibration_offset: true
   relative_mode: "world"
   rotation_scale: 0.4
   max_total_angle_deg: 25.0

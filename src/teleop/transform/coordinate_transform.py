@@ -9,7 +9,11 @@ from teleop.core.robot_frame import DualArmRobotFeedback, DualArmRobotTarget, Ro
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
 from teleop.core.units import position_m_to_mm
 from teleop.transform.calibration import ArmCalibrationAnchor, DualArmCalibrationState, IDENTITY_MATRIX_3X3
-from teleop.transform.orientation_transform import OrientationTrackingConfig, RelativeOrientationTracker
+from teleop.transform.orientation_transform import (
+    OrientationTrackingConfig,
+    RelativeOrientationTracker,
+    compute_absolute_arm_orientation_from_pico,
+)
 
 
 MatrixLike = Sequence[Sequence[float]]
@@ -190,6 +194,25 @@ class PositionOnlyCoordinateTransformer:
             except Exception:
                 robot_rotmat = None
 
+        controller_abs_rotmat = None
+        orientation_offset_rotmat = None
+        try:
+            abs_rot = compute_absolute_arm_orientation_from_pico(side, controller_quat)
+            controller_abs_rotmat = _matrix_to_tuple(_as_matrix3x3(abs_rot, f"controller.{side}.absolute_rotation_matrix"))
+        except Exception:
+            controller_abs_rotmat = None
+
+        if robot_rotmat is not None and controller_abs_rotmat is not None:
+            try:
+                robot_rot = _as_matrix3x3(robot_rotmat, f"robot_feedback.{side}.rotation_matrix")
+                abs_rot = _as_matrix3x3(controller_abs_rotmat, f"controller.{side}.absolute_rotation_matrix")
+                offset_rot = robot_rot @ abs_rot.T
+                orientation_offset_rotmat = _matrix_to_tuple(
+                    _as_matrix3x3(offset_rot, f"anchor.{side}.orientation_offset_rotmat")
+                )
+            except Exception:
+                orientation_offset_rotmat = None
+
         return ArmCalibrationAnchor(
             pico_anchor_xyz=(float(pose.x), float(pose.y), float(pose.z)),
             robot_anchor_xyz=robot_xyz,
@@ -197,6 +220,8 @@ class PositionOnlyCoordinateTransformer:
             source_frame_id=int(teleop_frame.frame_id),
             controller_anchor_quat_xyzw=controller_quat,
             robot_anchor_rotmat=robot_rotmat,
+            controller_abs_orientation_rotmat=controller_abs_rotmat,
+            orientation_offset_rotmat=orientation_offset_rotmat,
         )
 
     def _make_target_for_side(

@@ -25,6 +25,8 @@ class ArmCalibrationAnchor:
     source_frame_id: int
     controller_anchor_quat_xyzw: tuple[float, float, float, float] | None = None
     robot_anchor_rotmat: tuple[tuple[float, float, float], ...] | None = None
+    controller_abs_orientation_rotmat: tuple[tuple[float, float, float], ...] | None = None
+    orientation_offset_rotmat: tuple[tuple[float, float, float], ...] | None = None
 
     def __post_init__(self) -> None:
         if self.controller_anchor_quat_xyzw is not None:
@@ -34,6 +36,15 @@ class ArmCalibrationAnchor:
 
         if self.robot_anchor_rotmat is not None and not _is_valid_matrix_3x3(self.robot_anchor_rotmat):
             raise ValueError("robot_anchor_rotmat must be a finite 3x3 matrix when provided")
+
+        if (
+            self.controller_abs_orientation_rotmat is not None
+            and not _is_valid_matrix_3x3(self.controller_abs_orientation_rotmat)
+        ):
+            raise ValueError("controller_abs_orientation_rotmat must be a finite 3x3 matrix when provided")
+
+        if self.orientation_offset_rotmat is not None and not _is_valid_matrix_3x3(self.orientation_offset_rotmat):
+            raise ValueError("orientation_offset_rotmat must be a finite 3x3 matrix when provided")
 
 
 @dataclass(frozen=True)

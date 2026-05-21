@@ -283,7 +283,7 @@ Important behavior:
 Experimental orientation mode (explicit opt-in only):
 
 ```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --teleop-mode position_orientation
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --teleop-mode position_orientation --orientation-algorithm absolute_matrix
 ```
 
 Shorthand:
@@ -291,6 +291,19 @@ Shorthand:
 ```bash
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --enable-orientation
 ```
+
+Fallback algorithm (legacy relative path):
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --teleop-mode position_orientation --orientation-algorithm relative_rotvec
+```
+
+Orientation math notes:
+
+- default `absolute_matrix` mode computes `R_abs_now` from controller quaternion through fixed frame maps, then applies calibration continuity offset:
+	- `R_offset = R_robot_anchor @ R_abs_anchor.T`
+	- `R_target = R_offset @ R_abs_now`
+- all clamps/limits are applied on SO(3) using matrix/quaternion composition, not direct abc arithmetic.
 
 ## 9. Diagnostic UI
 

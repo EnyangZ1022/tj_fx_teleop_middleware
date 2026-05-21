@@ -74,6 +74,7 @@ def test_default_app_config_safe_defaults() -> None:
     assert cfg.teleop_mode == "position_only"
     assert cfg.control_mode == "joint_position"
     assert cfg.orientation_tracking.enabled is False
+    assert cfg.orientation_tracking.orientation_algorithm == "absolute_matrix"
 
 
 def test_position_orientation_mode_enables_orientation_tracking() -> None:

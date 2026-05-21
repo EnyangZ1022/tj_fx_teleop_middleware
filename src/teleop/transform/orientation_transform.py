@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 from scipy.spatial.transform import Rotation
@@ -12,6 +12,8 @@ from teleop.transform.calibration import ArmCalibrationAnchor
 
 
 Mat3Tuple = tuple[tuple[float, float, float], tuple[float, float, float], tuple[float, float, float]]
+
+_ALLOWED_ORIENTATION_ALGORITHMS = {"absolute_matrix", "relative_rotvec"}
 
 
 DEFAULT_ARM_A_ROTVEC_MAPPING: Mat3Tuple = (
@@ -24,6 +26,43 @@ DEFAULT_ARM_B_ROTVEC_MAPPING: Mat3Tuple = (
     (0.0, 0.0, 1.0),
     (0.0, -1.0, 0.0),
     (1.0, 0.0, 0.0),
+)
+
+# Fixed matrix mapping from Pico controller orientation to each arm frame.
+T_L1_L = np.array(
+    [
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+        [0.0, 1.0, 0.0],
+    ],
+    dtype=float,
+)
+
+T_L1_R = np.array(
+    [
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, -1.0, 0.0],
+    ],
+    dtype=float,
+)
+
+T_W_TO_PICO = np.array(
+    [
+        [0.0, 0.0, -1.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ],
+    dtype=float,
+)
+
+T_PICO_TO_USERWORLD = np.array(
+    [
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+    ],
+    dtype=float,
 )
 
 
@@ -45,6 +84,8 @@ class ArmOrientationConfig:
 @dataclass(frozen=True)
 class OrientationTrackingConfig:
     enabled: bool = False
+    orientation_algorithm: str = "absolute_matrix"
+    use_calibration_offset: bool = True
     relative_mode: str = "world"
     rotation_scale: float = 0.4
     max_total_angle_deg: float = 25.0
@@ -63,6 +104,14 @@ class OrientationTrackingConfig:
     )
 
     def __post_init__(self) -> None:
+        algorithm = str(self.orientation_algorithm).strip().lower()
+        if algorithm not in _ALLOWED_ORIENTATION_ALGORITHMS:
+            raise ValueError(
+                f"orientation_algorithm must be one of {sorted(_ALLOWED_ORIENTATION_ALGORITHMS)}, "
+                f"got {self.orientation_algorithm!r}"
+            )
+        object.__setattr__(self, "orientation_algorithm", algorithm)
+
         mode = str(self.relative_mode).strip().lower()
         if mode not in {"world", "local"}:
             raise ValueError("relative_mode must be 'world' or 'local'")
@@ -150,6 +199,7 @@ class RelativeOrientationTracker:
         self.set_converters(converters_by_side)
 
         self._last_rotvec_by_side: dict[str, np.ndarray] = {}
+        self._last_target_rotmat_by_side: dict[str, np.ndarray] = {}
         self._last_anchor_frame_by_side: dict[str, int] = {}
         self._last_relative_angle_deg_by_side: dict[str, float | None] = {
             "left": None,
@@ -168,6 +218,7 @@ class RelativeOrientationTracker:
 
     def reset(self) -> None:
         self._last_rotvec_by_side.clear()
+        self._last_target_rotmat_by_side.clear()
         self._last_anchor_frame_by_side.clear()
         self._last_relative_angle_deg_by_side = {
             "left": None,
@@ -203,12 +254,40 @@ class RelativeOrientationTracker:
         if controller_pose is None:
             return OrientationTrackingResult(False, reason="controller_pose_missing")
 
-        if anchor.controller_anchor_quat_xyzw is None:
-            return OrientationTrackingResult(False, reason="controller_anchor_quaternion_missing")
-
         if self._last_anchor_frame_by_side.get(side) != int(anchor.source_frame_id):
             self._last_anchor_frame_by_side[side] = int(anchor.source_frame_id)
             self._last_rotvec_by_side.pop(side, None)
+            self._last_target_rotmat_by_side.pop(side, None)
+
+        if self._config.orientation_algorithm == "relative_rotvec":
+            return self._compute_relative_rotvec_for_side(
+                side=side,
+                controller_pose=controller_pose,
+                anchor=anchor,
+                arm_cfg=arm_cfg,
+            )
+        if self._config.orientation_algorithm == "absolute_matrix":
+            return self._compute_absolute_matrix_for_side(
+                side=side,
+                controller_pose=controller_pose,
+                anchor=anchor,
+            )
+        return OrientationTrackingResult(False, reason="invalid_orientation_algorithm")
+
+    def _compute_relative_rotvec_for_side(
+        self,
+        *,
+        side: str,
+        controller_pose: Pose7,
+        anchor: ArmCalibrationAnchor,
+        arm_cfg: ArmOrientationConfig,
+    ) -> OrientationTrackingResult:
+        if anchor.controller_anchor_quat_xyzw is None:
+            return OrientationTrackingResult(False, reason="controller_anchor_quaternion_missing")
+
+        converter = self._converters_by_side.get(side)
+        if converter is None:
+            return OrientationTrackingResult(False, reason="orientation_converter_missing")
 
         try:
             q_ref = _normalize_quaternion_xyzw(anchor.controller_anchor_quat_xyzw)
@@ -239,39 +318,115 @@ class RelativeOrientationTracker:
 
             relative_angle_deg = float(np.linalg.norm(robot_rotvec) * 180.0 / math.pi)
 
-            converter = self._converters_by_side.get(side)
-            if anchor.robot_anchor_rotmat is not None:
-                ref_mat = _as_matrix3x3(anchor.robot_anchor_rotmat, f"anchor.{side}.robot_anchor_rotmat")
-            elif converter is not None:
-                ref_mat = converter.abc_to_rotation_matrix(anchor.robot_anchor_abc)
-                if ref_mat is None:
-                    return OrientationTrackingResult(False, reason="robot_reference_matrix_failed")
-            else:
-                return OrientationTrackingResult(False, reason="orientation_converter_missing")
+            ref_mat = _resolve_robot_anchor_matrix(anchor=anchor, converter=converter, side=side)
+            if ref_mat is None:
+                return OrientationTrackingResult(False, reason="robot_reference_matrix_failed")
 
-            r_target = Rotation.from_matrix(ref_mat) * Rotation.from_rotvec(robot_rotvec)
+            target_mat = (Rotation.from_matrix(ref_mat) * Rotation.from_rotvec(robot_rotvec)).as_matrix()
+            target_mat = _ensure_so3(target_mat, f"target.{side}.relative_rotvec")
 
-            if converter is None:
-                return OrientationTrackingResult(False, reason="orientation_converter_missing")
-
-            abc = converter.rotation_matrix_to_abc(r_target.as_matrix())
+            abc = converter.rotation_matrix_to_abc(target_mat)
             if abc is None:
                 return OrientationTrackingResult(False, reason="target_abc_conversion_failed")
 
             self._last_rotvec_by_side[side] = robot_rotvec
+            self._last_target_rotmat_by_side[side] = target_mat
             self._last_relative_angle_deg_by_side[side] = relative_angle_deg
 
             return OrientationTrackingResult(
                 success=True,
                 orientation_abc_deg=abc,
                 relative_angle_deg=relative_angle_deg,
-                reason="ok",
+                reason="ok_relative_rotvec",
+            )
+        except Exception as exc:
+            return OrientationTrackingResult(False, reason=f"orientation_exception:{exc.__class__.__name__}")
+
+    def _compute_absolute_matrix_for_side(
+        self,
+        *,
+        side: str,
+        controller_pose: Pose7,
+        anchor: ArmCalibrationAnchor,
+    ) -> OrientationTrackingResult:
+        converter = self._converters_by_side.get(side)
+        if converter is None:
+            return OrientationTrackingResult(False, reason="orientation_converter_missing")
+
+        try:
+            q_now = (controller_pose.qx, controller_pose.qy, controller_pose.qz, controller_pose.qw)
+            abs_now = compute_absolute_arm_orientation_from_pico(side, q_now)
+
+            robot_anchor_mat = _resolve_robot_anchor_matrix(anchor=anchor, converter=converter, side=side)
+            if robot_anchor_mat is None:
+                return OrientationTrackingResult(False, reason="robot_reference_matrix_failed")
+
+            offset_mat = _resolve_orientation_offset_matrix(
+                side=side,
+                anchor=anchor,
+                robot_anchor_mat=robot_anchor_mat,
+                use_calibration_offset=bool(self._config.use_calibration_offset),
+            )
+
+            reason = "ok_absolute_matrix"
+            if offset_mat is None:
+                target_mat = abs_now
+                if bool(self._config.use_calibration_offset):
+                    reason = "offset_missing_fallback_abs_now"
+                else:
+                    reason = "ok_absolute_matrix_no_offset"
+            else:
+                target_mat = offset_mat @ abs_now
+
+            target_mat = _ensure_so3(target_mat, f"target.{side}.absolute_matrix")
+            target_mat = _clamp_target_relative_to_anchor(
+                target_mat=target_mat,
+                anchor_mat=robot_anchor_mat,
+                max_total_deg=float(self._config.max_total_angle_deg),
+            )
+
+            prev_target = self._last_target_rotmat_by_side.get(side)
+            target_mat = _limit_step_target_matrix(
+                previous_target_mat=prev_target,
+                desired_target_mat=target_mat,
+                max_step_deg=float(self._config.max_step_angle_deg),
+            )
+
+            relative_angle_deg = _relative_angle_deg(anchor_mat=robot_anchor_mat, target_mat=target_mat)
+
+            abc = converter.rotation_matrix_to_abc(target_mat)
+            if abc is None:
+                return OrientationTrackingResult(False, reason="target_abc_conversion_failed")
+
+            self._last_target_rotmat_by_side[side] = target_mat
+            self._last_relative_angle_deg_by_side[side] = relative_angle_deg
+
+            return OrientationTrackingResult(
+                success=True,
+                orientation_abc_deg=abc,
+                relative_angle_deg=relative_angle_deg,
+                reason=reason,
             )
         except Exception as exc:
             return OrientationTrackingResult(False, reason=f"orientation_exception:{exc.__class__.__name__}")
 
 
-def _normalize_quaternion_xyzw(values: tuple[float, float, float, float]) -> np.ndarray:
+def controller_quat_to_pico_rotmat(quat_xyzw: Sequence[float]) -> np.ndarray:
+    q = _normalize_quaternion_xyzw(quat_xyzw)
+    mat = Rotation.from_quat(q).as_matrix()
+    return _ensure_so3(mat, "controller_quat_to_pico_rotmat")
+
+
+def compute_absolute_arm_orientation_from_pico(side: str, controller_quat_xyzw: Sequence[float]) -> np.ndarray:
+    side_norm = _normalize_absolute_side(side)
+    side_map = T_L1_L if side_norm == "left" else T_L1_R
+
+    r_pico = controller_quat_to_pico_rotmat(controller_quat_xyzw)
+    r_abs = side_map @ T_W_TO_PICO @ r_pico @ T_PICO_TO_USERWORLD
+    return _ensure_so3(r_abs, f"absolute_arm_orientation[{side_norm}]")
+
+
+def _normalize_quaternion_xyzw(values: Sequence[float]) -> np.ndarray:
     q = np.asarray(values, dtype=float)
     if q.shape != (4,):
         raise ValueError("quaternion must have shape (4,)")
@@ -287,6 +442,18 @@ def _as_matrix3x3(matrix: Any, name: str) -> np.ndarray:
         raise ValueError(f"{name} must be a 3x3 matrix")
     if not np.isfinite(arr).all():
         raise ValueError(f"{name} must contain finite values")
+    return arr
+
+
+def _ensure_so3(matrix: Any, name: str) -> np.ndarray:
+    arr = _as_matrix3x3(matrix, name)
+    should_be_identity = arr.T @ arr
+    if not np.allclose(should_be_identity, np.eye(3, dtype=float), atol=1e-6):
+        raise ValueError(f"{name} is not orthonormal")
+
+    det = float(np.linalg.det(arr))
+    if not math.isfinite(det) or abs(det - 1.0) > 1e-6:
+        raise ValueError(f"{name} determinant must be close to +1, got {det}")
     return arr
 
 
@@ -329,13 +496,111 @@ def _limit_step_angle(previous: np.ndarray | None, desired: np.ndarray, max_step
     return np.asarray(r_limited.as_rotvec(), dtype=float)
 
 
+def _relative_angle_deg(anchor_mat: np.ndarray, target_mat: np.ndarray) -> float:
+    r_anchor = Rotation.from_matrix(anchor_mat)
+    r_target = Rotation.from_matrix(target_mat)
+    delta = r_anchor.inv() * r_target
+    return float(np.linalg.norm(delta.as_rotvec()) * 180.0 / math.pi)
+
+
+def _clamp_target_relative_to_anchor(target_mat: np.ndarray, anchor_mat: np.ndarray, max_total_deg: float) -> np.ndarray:
+    r_anchor = Rotation.from_matrix(anchor_mat)
+    r_target = Rotation.from_matrix(target_mat)
+    delta_rotvec = np.asarray((r_anchor.inv() * r_target).as_rotvec(), dtype=float)
+    clamped_rotvec = _clamp_total_angle(delta_rotvec, max_total_deg=max_total_deg)
+    clamped_target = (r_anchor * Rotation.from_rotvec(clamped_rotvec)).as_matrix()
+    return _ensure_so3(clamped_target, "clamped_target")
+
+
+def _limit_step_target_matrix(
+    previous_target_mat: np.ndarray | None,
+    desired_target_mat: np.ndarray,
+    max_step_deg: float,
+) -> np.ndarray:
+    if previous_target_mat is None:
+        return desired_target_mat
+
+    max_step_rad = float(max_step_deg) * math.pi / 180.0
+    if max_step_rad <= 0.0:
+        return desired_target_mat
+
+    r_prev = Rotation.from_matrix(previous_target_mat)
+    r_des = Rotation.from_matrix(desired_target_mat)
+    delta_rotvec = np.asarray((r_prev.inv() * r_des).as_rotvec(), dtype=float)
+    delta_angle = float(np.linalg.norm(delta_rotvec))
+
+    if delta_angle <= max_step_rad or delta_angle <= 1e-12:
+        return desired_target_mat
+
+    limited_delta = delta_rotvec * (max_step_rad / delta_angle)
+    r_limited = r_prev * Rotation.from_rotvec(limited_delta)
+    return _ensure_so3(r_limited.as_matrix(), "step_limited_target")
+
+
+def _resolve_robot_anchor_matrix(anchor: ArmCalibrationAnchor, converter: Any | None, side: str) -> np.ndarray | None:
+    if anchor.robot_anchor_rotmat is not None:
+        return _ensure_so3(anchor.robot_anchor_rotmat, f"anchor.{side}.robot_anchor_rotmat")
+
+    if converter is None or not hasattr(converter, "abc_to_rotation_matrix"):
+        return None
+
+    ref_mat = converter.abc_to_rotation_matrix(anchor.robot_anchor_abc)
+    if ref_mat is None:
+        return None
+    return _ensure_so3(ref_mat, f"anchor.{side}.robot_anchor_rotmat_from_abc")
+
+
+def _resolve_orientation_offset_matrix(
+    *,
+    side: str,
+    anchor: ArmCalibrationAnchor,
+    robot_anchor_mat: np.ndarray,
+    use_calibration_offset: bool,
+) -> np.ndarray | None:
+    if not use_calibration_offset:
+        return None
+
+    if anchor.orientation_offset_rotmat is not None:
+        return _ensure_so3(anchor.orientation_offset_rotmat, f"anchor.{side}.orientation_offset_rotmat")
+
+    abs_anchor = None
+    if anchor.controller_abs_orientation_rotmat is not None:
+        abs_anchor = _ensure_so3(
+            anchor.controller_abs_orientation_rotmat,
+            f"anchor.{side}.controller_abs_orientation_rotmat",
+        )
+    elif anchor.controller_anchor_quat_xyzw is not None:
+        abs_anchor = compute_absolute_arm_orientation_from_pico(side, anchor.controller_anchor_quat_xyzw)
+
+    if abs_anchor is None:
+        return None
+
+    offset = robot_anchor_mat @ abs_anchor.T
+    return _ensure_so3(offset, f"anchor.{side}.orientation_offset_rotmat_computed")
+
+
+def _normalize_absolute_side(side: str) -> str:
+    side_norm = str(side).strip().lower()
+    if side_norm in {"left", "a"}:
+        return "left"
+    if side_norm in {"right", "b"}:
+        return "right"
+    raise ValueError("side must be one of: 'left', 'right', 'A', 'B'")
+
+
 __all__ = [
     "Mat3Tuple",
     "DEFAULT_ARM_A_ROTVEC_MAPPING",
     "DEFAULT_ARM_B_ROTVEC_MAPPING",
+    "T_L1_L",
+    "T_L1_R",
+    "T_W_TO_PICO",
+    "T_PICO_TO_USERWORLD",
     "ArmOrientationConfig",
     "OrientationTrackingConfig",
     "OrientationTrackingResult",
     "SDKOrientationConverter",
     "RelativeOrientationTracker",
+    "controller_quat_to_pico_rotmat",
+    "compute_absolute_arm_orientation_from_pico",
 ]

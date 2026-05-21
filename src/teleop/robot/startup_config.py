@@ -15,8 +15,8 @@ class RobotStartupConfig:
     vel_ratio: int = 20
     acc_ratio: int = 20
 
-    left_ready_q_deg: tuple[float, ...] = (90, -60, -90, -90, 0, 0, 0)
-    right_ready_q_deg: tuple[float, ...] = (90, 60, -90, -90, 0, 0, 0)
+    left_ready_q_deg: tuple[float, ...] = (90, -60, -90, -90, -30, 0, 0)
+    right_ready_q_deg: tuple[float, ...] = (90, 60, -90, -90, 30, 0, 0)
 
     home_send_hz: float = 100.0
     home_timeout_s: float = 20.0
