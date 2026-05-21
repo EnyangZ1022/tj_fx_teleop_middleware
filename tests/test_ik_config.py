@@ -5,14 +5,14 @@ import pytest
 from teleop.robot.ik_config import IKSolverConfig
 
 
-def test_ik_solver_config_defaults_enable_zsp_negative_z() -> None:
+def test_ik_solver_config_defaults_enable_per_arm_zsp_params() -> None:
     cfg = IKSolverConfig()
 
     assert cfg.mode == "zsp_negative_z"
     assert cfg.enable_zsp is True
     assert cfg.zsp_type == 1
     assert cfg.zsp_para_left == (1.0, -1.0, -1.0, 0.0, 0.0, 0.0)
-    assert cfg.zsp_para_right == (1.0, -1.0, -1.0, 0.0, 0.0, 0.0)
+    assert cfg.zsp_para_right == (1.0, 1.0, -1.0, 0.0, 0.0, 0.0)
     assert cfg.use_zsp() is True
 
 

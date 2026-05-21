@@ -10,6 +10,21 @@ from teleop.analysis.log_reader import (
     filter_records,
     read_jsonl_records,
 )
+from teleop.analysis.teleop_jump_analysis import (
+    ReadyPoseConfig,
+    SideJumpSummary,
+    analyze_side_jump,
+    compute_feedback_baseline,
+    find_rejects,
+    is_reject_reason,
+    max_abs,
+    median_vector,
+    plot_jump_summary,
+    vec_norm,
+    vec_sub,
+    write_jump_report_md,
+    write_jump_timeseries_csv,
+)
 
 __all__ = [
     "LogRecord",
@@ -22,4 +37,17 @@ __all__ = [
     "as_bool_or_none",
     "as_int_or_none",
     "as_str_or_none",
+    "ReadyPoseConfig",
+    "SideJumpSummary",
+    "vec_sub",
+    "vec_norm",
+    "max_abs",
+    "median_vector",
+    "is_reject_reason",
+    "compute_feedback_baseline",
+    "find_rejects",
+    "analyze_side_jump",
+    "write_jump_timeseries_csv",
+    "write_jump_report_md",
+    "plot_jump_summary",
 ]
