@@ -7,6 +7,7 @@ Orientation tracking is optional and does not change the default position-only b
 - position_only remains the default and production-safe baseline.
 - position_orientation is explicit opt-in.
 - all orientation computations are performed on SO(3) rotation matrices or quaternions.
+- in position_orientation mode, controller quaternion can be smoothed by a quaternion Slerp low-pass filter before matrix conversion.
 
 ## Modes
 
@@ -17,6 +18,31 @@ Orientation tracking is optional and does not change the default position-only b
 - position_orientation (experimental)
   - tracks xyz with the same position path.
   - tracks orientation using selected algorithm.
+  - uses quaternion/SO(3) Slerp low-pass filtering by default before controller quaternion is converted to rotation matrix.
+
+## Quaternion SO(3) Low-Pass Filter
+
+Filter location in pipeline:
+
+- raw controller quaternion (xyzw)
+- sign continuity correction (same hemisphere as previous filtered quaternion)
+- Slerp low-pass update
+- filtered controller quaternion (xyzw)
+- quaternion-to-rotation-matrix conversion
+- existing orientation mapping (`absolute_matrix` or `relative_rotvec`)
+
+Update equation:
+
+- alpha = 1.0 - exp(-dt_s / tau_s)
+- q_filtered = slerp(q_prev_filtered, q_raw, alpha)
+
+Notes:
+
+- filtering is only for controller orientation quaternion.
+- xyz position is not filtered.
+- filter is ignored in position_only mode.
+- calibration reset sets filter state to calibration frame quaternion to avoid residual offset.
+- filter state is also reset during app initialization and teleop stream restart.
 
 ## Orientation Algorithms
 
@@ -84,6 +110,13 @@ If offset data is unavailable and absolute_matrix is enabled, runtime falls back
 - max_total_angle_deg: 25
 - max_step_angle_deg: 2
 
+Orientation filter defaults (used in position_orientation mode):
+
+- enabled: true
+- tau_s: 0.02
+- fallback_dt_s: 0.01
+- reset_on_calibration: true
+
 ## CLI
 
 Default position-only mode:
@@ -96,6 +129,24 @@ Enable orientation mode with default algorithm:
 
 ```bash
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --teleop-mode position_orientation
+```
+
+Orientation mode with default quaternion filter:
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation
+```
+
+Disable orientation filter for A/B comparison:
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --disable-orientation-filter
+```
+
+Increase smoothing:
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --orientation-filter-tau 0.03
 ```
 
 Choose fallback algorithm explicitly:
@@ -115,3 +166,10 @@ python scripts/run_full_teleop.py --enable-orientation
 - Orientation mode failure on one side invalidates that side target with explicit reason.
 - No direct abc subtraction/addition is used.
 - Recalibration resets per-arm orientation tracking state for continuity.
+
+## Filter Tuning
+
+- tau_s = 0.02: responsive with light smoothing.
+- tau_s = 0.03 to 0.04: smoother but adds more lag.
+- if control feels delayed, reduce tau_s.
+- if orientation jitter still causes IK rejects, increase tau_s slightly.

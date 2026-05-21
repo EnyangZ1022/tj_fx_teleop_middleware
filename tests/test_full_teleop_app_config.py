@@ -6,6 +6,7 @@ from teleop.app import FullTeleopAppConfig
 from teleop.core.pose import Pose7
 from teleop.core.robot_frame import DualArmRobotTarget, RobotArmTarget
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
+from teleop.filtering import OrientationFilterConfig
 from teleop.safety import SafetyConfig, TargetSafetyGate
 from teleop.safety.state_machine import SafetyState
 from teleop.transform.calibration import ArmCalibrationAnchor, DualArmCalibrationState
@@ -75,16 +76,31 @@ def test_default_app_config_safe_defaults() -> None:
     assert cfg.control_mode == "joint_position"
     assert cfg.orientation_tracking.enabled is False
     assert cfg.orientation_tracking.orientation_algorithm == "absolute_matrix"
+    assert cfg.orientation_filter.enabled is False
+    assert cfg.orientation_filter.tau_s == 0.02
+    assert cfg.orientation_filter.fallback_dt_s == 0.01
 
 
 def test_position_orientation_mode_enables_orientation_tracking() -> None:
     cfg = FullTeleopAppConfig(
         teleop_mode="position_orientation",
         orientation_tracking=OrientationTrackingConfig(enabled=False),
+        orientation_filter=OrientationFilterConfig(enabled=True),
     )
 
     assert cfg.teleop_mode == "position_orientation"
     assert cfg.orientation_tracking.enabled is True
+    assert cfg.orientation_filter.enabled is True
+
+
+def test_position_orientation_mode_respects_orientation_filter_disable() -> None:
+    cfg = FullTeleopAppConfig(
+        teleop_mode="position_orientation",
+        orientation_filter=OrientationFilterConfig(enabled=False),
+    )
+
+    assert cfg.teleop_mode == "position_orientation"
+    assert cfg.orientation_filter.enabled is False
 
 
 def test_invalid_teleop_mode_raises() -> None:

@@ -13,6 +13,7 @@ if str(SRC_DIR) not in sys.path:
 
 from teleop.app import FullTeleopApp, FullTeleopAppConfig
 from teleop.core.teleop_mode import TeleopMode
+from teleop.filtering import OrientationFilterConfig
 from teleop.logging import LoggingConfig
 from teleop.transform.orientation_transform import OrientationTrackingConfig
 from teleop.ui.snapshot import LatestSnapshotStore
@@ -57,6 +58,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="absolute_matrix",
         help="Orientation tracking algorithm selector (absolute_matrix default)",
     )
+    parser.add_argument(
+        "--enable-orientation-filter",
+        action="store_true",
+        help="Enable quaternion Slerp low-pass orientation filtering in position_orientation mode",
+    )
+    parser.add_argument(
+        "--disable-orientation-filter",
+        action="store_true",
+        help="Disable quaternion Slerp low-pass orientation filtering in position_orientation mode",
+    )
+    parser.add_argument(
+        "--orientation-filter-tau",
+        type=float,
+        default=None,
+        help="Override orientation filter time constant tau in seconds (default 0.02)",
+    )
+    parser.add_argument(
+        "--orientation-filter-fallback-dt",
+        type=float,
+        default=None,
+        help="Override orientation filter fallback dt in seconds (default 0.01)",
+    )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
     parser.add_argument("--max-runtime-s", type=float, default=None, help="Optional runtime cap in seconds")
@@ -99,6 +122,22 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         orientation_algorithm=str(args.orientation_algorithm),
     )
 
+    orientation_filter_enabled = teleop_mode == TeleopMode.POSITION_ORIENTATION.value
+    if bool(args.disable_orientation_filter):
+        orientation_filter_enabled = False
+    if bool(args.enable_orientation_filter):
+        orientation_filter_enabled = True
+
+    orientation_filter = OrientationFilterConfig(
+        enabled=orientation_filter_enabled,
+        tau_s=float(args.orientation_filter_tau) if args.orientation_filter_tau is not None else 0.02,
+        fallback_dt_s=(
+            float(args.orientation_filter_fallback_dt)
+            if args.orientation_filter_fallback_dt is not None
+            else 0.01
+        ),
+    )
+
     return FullTeleopAppConfig(
         robot_ip=str(args.robot_ip),
         connect_pico=not bool(args.no_pico),
@@ -112,6 +151,7 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         logging_enabled=bool(args.logging),
         teleop_mode=teleop_mode,
         orientation_tracking=orientation_tracking,
+        orientation_filter=orientation_filter,
         control_mode=str(args.control_mode),
         single_arm_mode=side_mode,
         max_runtime_s=float(args.max_runtime_s) if args.max_runtime_s is not None else None,
@@ -119,6 +159,9 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
 
 
 def _validate_runtime_args(args: argparse.Namespace) -> str | None:
+    if bool(args.enable_orientation_filter) and bool(args.disable_orientation_filter):
+        return "--enable-orientation-filter and --disable-orientation-filter cannot be used together"
+
     if bool(args.enable_send) and bool(args.no_robot):
         return "--enable-send cannot be combined with --no-robot"
 
@@ -134,6 +177,12 @@ def _validate_runtime_args(args: argparse.Namespace) -> str | None:
 
     if args.max_runtime_s is not None and float(args.max_runtime_s) <= 0.0:
         return "--max-runtime-s must be positive when provided"
+
+    if args.orientation_filter_tau is not None and float(args.orientation_filter_tau) <= 0.0:
+        return "--orientation-filter-tau must be > 0"
+
+    if args.orientation_filter_fallback_dt is not None and float(args.orientation_filter_fallback_dt) <= 0.0:
+        return "--orientation-filter-fallback-dt must be > 0"
 
     return None
 
@@ -155,6 +204,11 @@ def main() -> int:
 
     print(f"Control mode: {app_config.control_mode}")
     print(f"Teleop mode: {app_config.teleop_mode}")
+    if app_config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:
+        print(f"Orientation filter: {'enabled' if bool(app_config.orientation_filter.enabled) else 'disabled'}")
+        print(f"orientation_filter_tau_s: {float(app_config.orientation_filter.tau_s):.5f}")
+        print(f"orientation_filter_fallback_dt_s: {float(app_config.orientation_filter.fallback_dt_s):.5f}")
+        print(f"reset_on_calibration: {bool(app_config.orientation_filter.reset_on_calibration)}")
     if bool(app_config.orientation_tracking.enabled):
         print("Orientation tracking: enabled")
         print(f"  orientation_algorithm={app_config.orientation_tracking.orientation_algorithm}")

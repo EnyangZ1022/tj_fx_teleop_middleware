@@ -121,6 +121,7 @@ class FullTeleopApp:
         elif self.config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:
             self.coordinate_transformer = PositionOrientationCoordinateTransformer(
                 orientation_config=self.config.orientation_tracking,
+                orientation_filter_config=self.config.orientation_filter,
             )
         else:
             self.coordinate_transformer = PositionOnlyCoordinateTransformer()
@@ -210,6 +211,7 @@ class FullTeleopApp:
                     self.command_adapter.enable_commands()
 
             self._initialized = True
+            self._reset_orientation_filter_runtime()
             self.logger.log_event(
                 "full_app_initialized",
                 payload={
@@ -227,6 +229,12 @@ class FullTeleopApp:
                     "orientation_rotation_scale": float(self.config.orientation_tracking.rotation_scale),
                     "orientation_max_total_angle_deg": float(self.config.orientation_tracking.max_total_angle_deg),
                     "orientation_max_step_angle_deg": float(self.config.orientation_tracking.max_step_angle_deg),
+                    "orientation_filter_enabled": bool(self.config.orientation_filter.enabled),
+                    "orientation_filter_tau_s": float(self.config.orientation_filter.tau_s),
+                    "orientation_filter_fallback_dt_s": float(self.config.orientation_filter.fallback_dt_s),
+                    "orientation_filter_reset_on_calibration": bool(
+                        self.config.orientation_filter.reset_on_calibration
+                    ),
                 },
             )
         except Exception:
@@ -293,6 +301,7 @@ class FullTeleopApp:
             pass
 
         self.logger.stop()
+        self._reset_orientation_filter_runtime()
         self._initialized = False
 
     def step_once(self, now_ns: int) -> None:
@@ -300,6 +309,10 @@ class FullTeleopApp:
 
         teleop_frame = self._read_teleop_frame()
         feedback = self._read_robot_feedback()
+
+        if teleop_frame is not None and self._previous_teleop_frame is None:
+            # Reset filter memory when teleop stream starts/restarts to avoid stale state.
+            self._reset_orientation_filter_runtime()
 
         calibration_side = self.config.single_arm_mode
         calibration_requested = False
@@ -324,6 +337,11 @@ class FullTeleopApp:
                     feedback,
                     side=calibration_side,
                 )
+
+            self._reset_orientation_filter_on_calibration(
+                teleop_frame=teleop_frame,
+                side=calibration_side,
+            )
 
             self.logger.log_event(
                 "calibration_requested",
@@ -402,6 +420,9 @@ class FullTeleopApp:
                 "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
                 "orientation_algorithm": str(self.config.orientation_tracking.orientation_algorithm),
                 "orientation_use_calibration_offset": bool(self.config.orientation_tracking.use_calibration_offset),
+                "orientation_filter_enabled": bool(self.config.orientation_filter.enabled),
+                "orientation_filter_tau_s": float(self.config.orientation_filter.tau_s),
+                "orientation_filter_fallback_dt_s": float(self.config.orientation_filter.fallback_dt_s),
                 "left_relative_angle_deg": self._latest_orientation_debug["left"].get("relative_angle_deg"),
                 "right_relative_angle_deg": self._latest_orientation_debug["right"].get("relative_angle_deg"),
                 "pico_left_xyz_m": [left_pose.x, left_pose.y, left_pose.z] if left_pose is not None else None,
@@ -520,6 +541,29 @@ class FullTeleopApp:
             self.coordinate_transformer.set_orientation_converters(converters)
         except Exception:
             # Orientation converter wiring is best effort and must not break startup.
+            pass
+
+    def _reset_orientation_filter_runtime(self) -> None:
+        if not hasattr(self.coordinate_transformer, "reset_orientation_filter_all"):
+            return
+        try:
+            self.coordinate_transformer.reset_orientation_filter_all()
+        except Exception:
+            # Orientation filter reset is best effort and must not block runtime.
+            pass
+
+    def _reset_orientation_filter_on_calibration(
+        self,
+        *,
+        teleop_frame: TeleopFrame,
+        side: str | None,
+    ) -> None:
+        if not hasattr(self.coordinate_transformer, "reset_orientation_filter_from_frame"):
+            return
+        try:
+            self.coordinate_transformer.reset_orientation_filter_from_frame(teleop_frame=teleop_frame, side=side)
+        except Exception:
+            # Calibration should still succeed even if filter reset hook fails.
             pass
 
     def _apply_single_arm_mode_to_target(self, target: DualArmRobotTarget | None) -> DualArmRobotTarget | None:

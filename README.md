@@ -20,6 +20,7 @@ Diagnostic UI and asynchronous logging are supported as optional tools.
 - Optional async logging and replay tooling (disabled by default)
 - Optional PySide6/PyQtGraph diagnostic UI (diagnostic-only)
 - Experimental position+orientation teleop mode (explicit opt-in)
+- Quaternion SO(3) Slerp low-pass orientation filter in position_orientation mode
 - Robot command control mode selection (`joint_position` default, optional `joint_impedance`)
 
 ## 2. Project layout
@@ -286,10 +287,30 @@ Experimental orientation mode (explicit opt-in only):
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --teleop-mode position_orientation --orientation-algorithm absolute_matrix
 ```
 
+Orientation filter behavior in orientation mode:
+
+- quaternion/SO(3) Slerp low-pass filter is enabled by default
+- filter is applied to controller quaternion before quaternion-to-rotation-matrix conversion
+- xyz position is not filtered
+- filter is ignored in position_only mode
+- default parameters: `tau_s=0.02`, `fallback_dt_s=0.01`, `reset_on_calibration=true`
+
 Shorthand:
 
 ```bash
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --enable-orientation
+```
+
+Disable orientation filter for A/B comparison:
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --disable-orientation-filter
+```
+
+Increase smoothing:
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --orientation-filter-tau 0.03
 ```
 
 Fallback algorithm (legacy relative path):
@@ -304,6 +325,7 @@ Orientation math notes:
 	- `R_offset = R_robot_anchor @ R_abs_anchor.T`
 	- `R_target = R_offset @ R_abs_now`
 - all clamps/limits are applied on SO(3) using matrix/quaternion composition, not direct abc arithmetic.
+- orientation filter tuning: `tau_s=0.02` is responsive and lightly smoothed; `0.03~0.04` is smoother with more lag.
 
 ## 9. Diagnostic UI
 

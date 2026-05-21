@@ -28,6 +28,12 @@ orientation_tracking:
         - [0.0, -1.0, 0.0]
         - [1.0, 0.0, 0.0]
 
+orientation_filter:
+  enabled: true
+  tau_s: 0.02
+  fallback_dt_s: 0.01
+  reset_on_calibration: true
+
 timing:
   proposed_command_loop_rate_hz: 100
   fallback_command_loop_rate_hz: 50

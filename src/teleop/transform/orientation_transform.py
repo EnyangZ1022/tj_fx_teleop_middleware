@@ -7,6 +7,7 @@ from typing import Any, Sequence
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from teleop.filtering import DualArmOrientationFilter, OrientationFilterConfig
 from teleop.core.pose import Pose7
 from teleop.transform.calibration import ArmCalibrationAnchor
 
@@ -193,8 +194,20 @@ class RelativeOrientationTracker:
         self,
         config: OrientationTrackingConfig,
         converters_by_side: dict[str, Any] | None = None,
+        orientation_filter_config: OrientationFilterConfig | None = None,
+        orientation_filter: DualArmOrientationFilter | None = None,
     ):
         self._config = config
+        self._orientation_filter_config = (
+            orientation_filter_config
+            if orientation_filter_config is not None
+            else OrientationFilterConfig(enabled=False)
+        )
+        self._orientation_filter = (
+            orientation_filter
+            if orientation_filter is not None
+            else DualArmOrientationFilter(self._orientation_filter_config)
+        )
         self._converters_by_side: dict[str, Any] = {}
         self.set_converters(converters_by_side)
 
@@ -224,6 +237,18 @@ class RelativeOrientationTracker:
             "left": None,
             "right": None,
         }
+        self._orientation_filter.reset_all()
+
+    def reset_orientation_filter_all(self) -> None:
+        self._orientation_filter.reset_all()
+
+    def reset_orientation_filter_side(
+        self,
+        side: str,
+        quat_xyzw: Sequence[float] | None = None,
+        timestamp_ns: int | None = None,
+    ) -> None:
+        self._orientation_filter.reset_side(side=side, quat_xyzw=quat_xyzw, timestamp_ns=timestamp_ns)
 
     def latest_relative_angle_deg(self, side: str) -> float | None:
         side_norm = str(side).strip().lower()
@@ -236,6 +261,7 @@ class RelativeOrientationTracker:
         teleop_left: Pose7 | None,
         teleop_right: Pose7 | None,
         anchor: ArmCalibrationAnchor,
+        timestamp_ns: int | None = None,
     ) -> OrientationTrackingResult:
         side = str(robot_side).strip().lower()
         if side not in {"left", "right"}:
@@ -254,6 +280,20 @@ class RelativeOrientationTracker:
         if controller_pose is None:
             return OrientationTrackingResult(False, reason="controller_pose_missing")
 
+        raw_controller_quat_xyzw = (
+            controller_pose.qx,
+            controller_pose.qy,
+            controller_pose.qz,
+            controller_pose.qw,
+        )
+        controller_quat_xyzw = raw_controller_quat_xyzw
+        if bool(self._orientation_filter_config.enabled):
+            controller_quat_xyzw = self._orientation_filter.update_side(
+                side=side,
+                quat_xyzw=raw_controller_quat_xyzw,
+                timestamp_ns=timestamp_ns,
+            )
+
         if self._last_anchor_frame_by_side.get(side) != int(anchor.source_frame_id):
             self._last_anchor_frame_by_side[side] = int(anchor.source_frame_id)
             self._last_rotvec_by_side.pop(side, None)
@@ -262,14 +302,14 @@ class RelativeOrientationTracker:
         if self._config.orientation_algorithm == "relative_rotvec":
             return self._compute_relative_rotvec_for_side(
                 side=side,
-                controller_pose=controller_pose,
+                controller_quat_xyzw=controller_quat_xyzw,
                 anchor=anchor,
                 arm_cfg=arm_cfg,
             )
         if self._config.orientation_algorithm == "absolute_matrix":
             return self._compute_absolute_matrix_for_side(
                 side=side,
-                controller_pose=controller_pose,
+                controller_quat_xyzw=controller_quat_xyzw,
                 anchor=anchor,
             )
         return OrientationTrackingResult(False, reason="invalid_orientation_algorithm")
@@ -278,7 +318,7 @@ class RelativeOrientationTracker:
         self,
         *,
         side: str,
-        controller_pose: Pose7,
+        controller_quat_xyzw: Sequence[float],
         anchor: ArmCalibrationAnchor,
         arm_cfg: ArmOrientationConfig,
     ) -> OrientationTrackingResult:
@@ -291,7 +331,7 @@ class RelativeOrientationTracker:
 
         try:
             q_ref = _normalize_quaternion_xyzw(anchor.controller_anchor_quat_xyzw)
-            q_now = _normalize_quaternion_xyzw((controller_pose.qx, controller_pose.qy, controller_pose.qz, controller_pose.qw))
+            q_now = _normalize_quaternion_xyzw(controller_quat_xyzw)
 
             r_ref = Rotation.from_quat(q_ref)
             r_now = Rotation.from_quat(q_now)
@@ -346,7 +386,7 @@ class RelativeOrientationTracker:
         self,
         *,
         side: str,
-        controller_pose: Pose7,
+        controller_quat_xyzw: Sequence[float],
         anchor: ArmCalibrationAnchor,
     ) -> OrientationTrackingResult:
         converter = self._converters_by_side.get(side)
@@ -354,8 +394,7 @@ class RelativeOrientationTracker:
             return OrientationTrackingResult(False, reason="orientation_converter_missing")
 
         try:
-            q_now = (controller_pose.qx, controller_pose.qy, controller_pose.qz, controller_pose.qw)
-            abs_now = compute_absolute_arm_orientation_from_pico(side, q_now)
+            abs_now = compute_absolute_arm_orientation_from_pico(side, controller_quat_xyzw)
 
             robot_anchor_mat = _resolve_robot_anchor_matrix(anchor=anchor, converter=converter, side=side)
             if robot_anchor_mat is None:

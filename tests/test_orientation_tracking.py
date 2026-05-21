@@ -9,6 +9,7 @@ from scipy.spatial.transform import Rotation
 from teleop.core.pose import Pose7
 from teleop.core.robot_frame import DualArmRobotFeedback, RobotArmFeedback
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
+from teleop.filtering import DualArmOrientationFilter, OrientationFilterConfig
 from teleop.transform.calibration import ArmCalibrationAnchor
 from teleop.transform.coordinate_transform import PositionOnlyCoordinateTransformer, PositionOrientationCoordinateTransformer
 from teleop.transform.orientation_transform import (
@@ -42,6 +43,24 @@ class _SpyOrientationConverter(_FakeOrientationConverter):
     def rotation_matrix_to_abc(self, rotmat):
         self.last_rotmat = np.asarray(rotmat, dtype=float)
         return (11.0, 22.0, 33.0)
+
+
+class _SpyDualArmOrientationFilter:
+    def __init__(self) -> None:
+        self.update_calls: list[str] = []
+        self.reset_calls: list[str] = []
+
+    def update_side(self, side: str, quat_xyzw, timestamp_ns=None, dt_s=None):
+        _ = (timestamp_ns, dt_s)
+        self.update_calls.append(str(side))
+        return tuple(float(v) for v in quat_xyzw)
+
+    def reset_side(self, side: str, quat_xyzw=None, timestamp_ns=None):
+        _ = (quat_xyzw, timestamp_ns)
+        self.reset_calls.append(str(side))
+
+    def reset_all(self):
+        self.reset_calls.append("all")
 
 
 def _pose_xyz_quat(x: float, y: float, z: float, quat_xyzw: tuple[float, float, float, float]) -> Pose7:
@@ -478,6 +497,7 @@ def test_sdk_matrix_to_abc_receives_absolute_target_matrix() -> None:
             max_step_angle_deg=180.0,
         ),
         converters_by_side={"right": converter},
+        orientation_filter_config=OrientationFilterConfig(enabled=False),
     )
 
     q_now = _quat_from_rotvec_deg(2.0, -3.0, 7.0)
@@ -501,3 +521,80 @@ def test_sdk_matrix_to_abc_receives_absolute_target_matrix() -> None:
 
     expected_target = compute_absolute_arm_orientation_from_pico("right", q_now)
     assert np.allclose(converter.last_rotmat, expected_target, atol=1e-6)
+
+
+def test_absolute_matrix_uses_filtered_quaternion_when_filter_enabled() -> None:
+    converter = _SpyOrientationConverter()
+    filter_cfg = OrientationFilterConfig(enabled=True, tau_s=0.02, fallback_dt_s=0.01)
+    tracker = RelativeOrientationTracker(
+        config=OrientationTrackingConfig(
+            enabled=True,
+            orientation_algorithm="absolute_matrix",
+            use_calibration_offset=False,
+            max_total_angle_deg=180.0,
+            max_step_angle_deg=180.0,
+        ),
+        converters_by_side={"right": converter},
+        orientation_filter_config=filter_cfg,
+    )
+
+    anchor = _anchor(
+        source_frame_id=1,
+        controller_ref_quat=(0.0, 0.0, 0.0, 1.0),
+        robot_anchor_abc=(0.0, 0.0, 0.0),
+        robot_anchor_rotmat=np.eye(3, dtype=float),
+    )
+
+    q_ref = _quat_from_rotvec_deg(0.0, 0.0, 0.0)
+    q_now = _quat_from_rotvec_deg(0.0, 0.0, 20.0)
+
+    first = tracker.compute_for_side(
+        robot_side="right",
+        teleop_left=None,
+        teleop_right=_pose_xyz_quat(0.0, 0.0, 0.0, q_ref),
+        anchor=anchor,
+        timestamp_ns=0,
+    )
+    second = tracker.compute_for_side(
+        robot_side="right",
+        teleop_left=None,
+        teleop_right=_pose_xyz_quat(0.0, 0.0, 0.0, q_now),
+        anchor=anchor,
+        timestamp_ns=10_000_000,
+    )
+
+    assert first.success is True
+    assert second.success is True
+    assert converter.last_rotmat is not None
+
+    expected_filter = DualArmOrientationFilter(filter_cfg)
+    _ = expected_filter.update_side("right", q_ref, timestamp_ns=0)
+    q_filtered = expected_filter.update_side("right", q_now, timestamp_ns=10_000_000)
+
+    expected_target = compute_absolute_arm_orientation_from_pico("right", q_filtered)
+    raw_target = compute_absolute_arm_orientation_from_pico("right", q_now)
+
+    assert np.allclose(converter.last_rotmat, expected_target, atol=1e-6)
+    assert not np.allclose(converter.last_rotmat, raw_target, atol=1e-6)
+
+
+def test_disabled_orientation_tracking_does_not_update_orientation_filter() -> None:
+    filter_spy = _SpyDualArmOrientationFilter()
+    tracker = RelativeOrientationTracker(
+        config=OrientationTrackingConfig(enabled=False, orientation_algorithm="absolute_matrix"),
+        converters_by_side={"right": _FakeOrientationConverter()},
+        orientation_filter_config=OrientationFilterConfig(enabled=True),
+        orientation_filter=filter_spy,
+    )
+
+    result = tracker.compute_for_side(
+        robot_side="right",
+        teleop_left=None,
+        teleop_right=_pose_xyz_quat(0.0, 0.0, 0.0, _quat_from_rotvec_deg(0.0, 0.0, 10.0)),
+        anchor=_anchor(),
+        timestamp_ns=1,
+    )
+
+    assert result.success is True
+    assert result.reason == "disabled"
+    assert filter_spy.update_calls == []

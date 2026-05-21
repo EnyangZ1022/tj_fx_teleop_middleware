@@ -30,8 +30,8 @@ class RobotCommandConfig:
 
     joint_k: tuple[float, ...] = (6, 6, 6, 5, 4, 3, 3)
     joint_d: tuple[float, ...] = (0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2)
-    vel_ratio: int = 20
-    acc_ratio: int = 20
+    vel_ratio: int = 100
+    acc_ratio: int = 100
     ik_solver: IKSolverConfig = field(default_factory=IKSolverConfig)
 
     def __post_init__(self) -> None:

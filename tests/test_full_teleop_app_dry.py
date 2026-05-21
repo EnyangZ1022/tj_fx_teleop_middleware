@@ -7,6 +7,9 @@ from teleop.app import FullTeleopApp, FullTeleopAppConfig
 from teleop.core.pose import Pose7
 from teleop.core.robot_frame import DualArmRobotFeedback, RobotArmFeedback
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
+from teleop.filtering import OrientationFilterConfig
+from teleop.transform.coordinate_transform import PositionOrientationCoordinateTransformer
+from teleop.transform.orientation_transform import OrientationTrackingConfig
 
 
 def _pose(x: float, y: float, z: float) -> Pose7:
@@ -291,3 +294,48 @@ def test_run_full_teleop_script_importable_without_side_effects() -> None:
 
     assert hasattr(module, "parse_args")
     assert hasattr(module, "main")
+
+
+def test_calibration_triggers_orientation_filter_reset_hook() -> None:
+    class _SpyPositionOrientationTransformer(PositionOrientationCoordinateTransformer):
+        def __init__(self):
+            super().__init__(
+                orientation_config=OrientationTrackingConfig(enabled=True, orientation_algorithm="absolute_matrix"),
+                orientation_filter_config=OrientationFilterConfig(enabled=True),
+            )
+            self.reset_calls: list[tuple[str | None, int]] = []
+
+        def reset_orientation_filter_from_frame(self, teleop_frame: TeleopFrame, side: str | None = None) -> None:
+            self.reset_calls.append((side, int(teleop_frame.frame_id)))
+            super().reset_orientation_filter_from_frame(teleop_frame=teleop_frame, side=side)
+
+    cfg = FullTeleopAppConfig(
+        connect_pico=True,
+        connect_robot=True,
+        dry_run=True,
+        enable_send=False,
+        teleop_mode="position_orientation",
+    )
+    provider = _FakeTeleopProvider(
+        [
+            _frame(frame_id=1, now_ns=1_000_000_000, left_axis_click=False, right_axis_click=False),
+            _frame(frame_id=2, now_ns=1_020_000_000, left_axis_click=True, right_axis_click=False),
+        ]
+    )
+    sdk = _FakeSDKAdapter()
+    cmd = _FakeCommandAdapter(dry_run=True)
+    transformer = _SpyPositionOrientationTransformer()
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        sdk_adapter=sdk,
+        command_adapter=cmd,
+        coordinate_transformer=transformer,
+    )
+    app.initialize()
+    app.step_once(1_010_000_000)
+    app.step_once(1_030_000_000)
+    app.shutdown()
+
+    assert transformer.reset_calls == [(None, 2)]

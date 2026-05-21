@@ -5,6 +5,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from teleop.filtering import OrientationFilterConfig
 from teleop.core.robot_frame import DualArmRobotFeedback, DualArmRobotTarget, RobotArmTarget
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
 from teleop.core.units import position_m_to_mm
@@ -280,6 +281,7 @@ class PositionOrientationCoordinateTransformer(PositionOnlyCoordinateTransformer
         left_scale: float = 1.0,
         right_scale: float = 1.0,
         orientation_config: OrientationTrackingConfig | None = None,
+        orientation_filter_config: OrientationFilterConfig | None = None,
         orientation_converters_by_side: dict[str, Any] | None = None,
     ):
         super().__init__(
@@ -293,9 +295,15 @@ class PositionOrientationCoordinateTransformer(PositionOnlyCoordinateTransformer
         self._orientation_config = (
             orientation_config if orientation_config is not None else OrientationTrackingConfig(enabled=False)
         )
+        self._orientation_filter_config = (
+            orientation_filter_config
+            if orientation_filter_config is not None
+            else OrientationFilterConfig(enabled=True)
+        )
         self._orientation_tracker = RelativeOrientationTracker(
             config=self._orientation_config,
             converters_by_side=self._orientation_converters_by_side,
+            orientation_filter_config=self._orientation_filter_config,
         )
         self._latest_orientation_debug: dict[str, dict[str, float | str | bool | None]] = {
             "left": {
@@ -309,6 +317,7 @@ class PositionOrientationCoordinateTransformer(PositionOnlyCoordinateTransformer
                 "relative_angle_deg": None,
             },
         }
+        self._last_pose_valid_by_side: dict[str, bool] = {"left": False, "right": False}
 
     def set_orientation_converters(self, converters_by_side: dict[str, Any] | None) -> None:
         super().set_orientation_converters(converters_by_side)
@@ -320,6 +329,48 @@ class PositionOrientationCoordinateTransformer(PositionOnlyCoordinateTransformer
             "left": dict(self._latest_orientation_debug["left"]),
             "right": dict(self._latest_orientation_debug["right"]),
         }
+
+    def reset_orientation_filter_all(self) -> None:
+        self._orientation_tracker.reset_orientation_filter_all()
+        self._last_pose_valid_by_side = {"left": False, "right": False}
+
+    def reset_orientation_filter_side(
+        self,
+        side: str,
+        quat_xyzw: Sequence[float] | None = None,
+        timestamp_ns: int | None = None,
+    ) -> None:
+        side_norm = str(side).strip().lower()
+        if side_norm not in {"left", "right"}:
+            raise ValueError("side must be 'left' or 'right'")
+
+        self._orientation_tracker.reset_orientation_filter_side(
+            side=side_norm,
+            quat_xyzw=quat_xyzw,
+            timestamp_ns=timestamp_ns,
+        )
+        self._last_pose_valid_by_side[side_norm] = bool(quat_xyzw is not None)
+
+    def reset_orientation_filter_from_frame(self, teleop_frame: TeleopFrame, side: str | None = None) -> None:
+        if not bool(self._orientation_filter_config.reset_on_calibration):
+            return
+
+        for side_name in _requested_sides(side):
+            arm_input = teleop_frame.left if side_name == "left" else teleop_frame.right
+            quat_xyzw = None
+            if arm_input.valid and arm_input.pose_pico is not None:
+                quat_xyzw = (
+                    arm_input.pose_pico.qx,
+                    arm_input.pose_pico.qy,
+                    arm_input.pose_pico.qz,
+                    arm_input.pose_pico.qw,
+                )
+
+            self.reset_orientation_filter_side(
+                side=side_name,
+                quat_xyzw=quat_xyzw,
+                timestamp_ns=int(teleop_frame.source_timestamp_ns),
+            )
 
     def make_target(
         self,
@@ -365,6 +416,20 @@ class PositionOrientationCoordinateTransformer(PositionOnlyCoordinateTransformer
         anchor: ArmCalibrationAnchor | None,
         teleop_frame: TeleopFrame,
     ) -> RobotArmTarget | None:
+        side_input = teleop_frame.left if robot_side == "left" else teleop_frame.right
+        pose_valid = bool(side_input.valid and side_input.pose_pico is not None)
+        was_pose_valid = bool(self._last_pose_valid_by_side.get(robot_side, False))
+        self._last_pose_valid_by_side[robot_side] = pose_valid
+
+        if bool(self._orientation_filter_config.enabled) and pose_valid and not was_pose_valid:
+            pose = side_input.pose_pico
+            assert pose is not None
+            self._orientation_tracker.reset_orientation_filter_side(
+                side=robot_side,
+                quat_xyzw=(pose.qx, pose.qy, pose.qz, pose.qw),
+                timestamp_ns=int(teleop_frame.source_timestamp_ns),
+            )
+
         if target is None:
             self._latest_orientation_debug[robot_side] = {
                 "enabled": True,
@@ -399,6 +464,7 @@ class PositionOrientationCoordinateTransformer(PositionOnlyCoordinateTransformer
             teleop_left=teleop_frame.left.pose_pico,
             teleop_right=teleop_frame.right.pose_pico,
             anchor=anchor,
+            timestamp_ns=int(teleop_frame.source_timestamp_ns),
         )
         self._latest_orientation_debug[robot_side] = {
             "enabled": True,
