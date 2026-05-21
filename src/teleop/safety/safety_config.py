@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class SafetyConfig:
     pico_timeout_ms: float = 300.0
     enable_on_threshold: float = 0.85
-    enable_off_threshold: float = 0.65
+    enable_off_threshold: float = 0.45
     max_single_step_mm: float = 50.0
     max_velocity_mm_s: float = 500.0
     allow_single_arm_motion: bool = True
@@ -18,7 +18,7 @@ class SafetyConfig:
         *,
         pico_timeout_ms: float = 300.0,
         enable_on_threshold: float = 0.85,
-        enable_off_threshold: float = 0.65,
+        enable_off_threshold: float = 0.45,
         max_single_step_mm: float = 50.0,
         max_velocity_mm_s: float = 500.0,
         allow_single_arm_motion: bool = True,

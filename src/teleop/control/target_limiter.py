@@ -8,8 +8,8 @@ from teleop.core.command_frame import ArmCommandTarget, DualArmCommandTarget
 
 @dataclass(frozen=True)
 class TargetLimiterConfig:
-    max_single_step_mm: float = 5.0
-    max_cartesian_velocity_mm_s: float = 200.0
+    max_single_step_mm: float = 10.0
+    max_cartesian_velocity_mm_s: float = 350.0
     clip_instead_of_reject: bool = True
 
 

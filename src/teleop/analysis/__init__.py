@@ -25,6 +25,20 @@ from teleop.analysis.teleop_jump_analysis import (
     write_jump_report_md,
     write_jump_timeseries_csv,
 )
+from teleop.analysis.ik_replay_analysis import (
+    IKReplaySummary,
+    RejectMarker,
+    SideQSeries,
+    build_ik_replay_summary,
+    build_q_series_from_recorded_commands,
+    find_reject_markers,
+    plot_ik_replay_summary,
+    summarize_q_jumps,
+    try_replay_ik_from_targets,
+    write_ik_replay_report,
+    write_reject_markers_csv,
+    write_replay_q_timeseries_csv,
+)
 
 __all__ = [
     "LogRecord",
@@ -50,4 +64,16 @@ __all__ = [
     "write_jump_timeseries_csv",
     "write_jump_report_md",
     "plot_jump_summary",
+    "SideQSeries",
+    "RejectMarker",
+    "IKReplaySummary",
+    "build_q_series_from_recorded_commands",
+    "find_reject_markers",
+    "summarize_q_jumps",
+    "try_replay_ik_from_targets",
+    "build_ik_replay_summary",
+    "write_replay_q_timeseries_csv",
+    "write_reject_markers_csv",
+    "write_ik_replay_report",
+    "plot_ik_replay_summary",
 ]

@@ -15,8 +15,8 @@ class CommandSchedulerConfig:
     fallback_rate_hz: float = 50.0
     controller_inner_loop_hz: float = 1000.0
     target_max_age_ms: float = 300.0
-    left_ik_reference_q_deg: tuple[float, ...] = (90, -90, -90, -90, 0, 0, 0)
-    right_ik_reference_q_deg: tuple[float, ...] = (90, 90, -90, -90, 0, 0, 0)
+    left_ik_reference_q_deg: tuple[float, ...] = (90, -60, -90, -90, -30, 0, 0)
+    right_ik_reference_q_deg: tuple[float, ...] = (90, 60, -90, -90, 30, 0, 0)
 
     def __post_init__(self) -> None:
         _validate_positive(self.rate_hz, "rate_hz")

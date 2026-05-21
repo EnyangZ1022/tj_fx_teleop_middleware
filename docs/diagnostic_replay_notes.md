@@ -40,3 +40,37 @@ Outputs under output directory (default `teleop_jump_analysis`):
 ```bash
 python scripts/analyze_teleop_jump.py --input logs/<session>/teleop_session.jsonl
 ```
+
+## IK Replay / Q-Series Analysis
+
+`replay_teleop_ik.py` adds offline q-series diagnostics around reject events.
+
+It helps answer:
+
+- whether recorded command q jumps before reject events,
+- which joints contribute most to step and velocity spikes,
+- whether reject reasons like `joint_step_limit` or `joint_velocity_limit` are explained by q discontinuity.
+
+This tool is still offline:
+
+- It does not connect to PICO.
+- It does not connect to robot.
+- It does not send robot commands.
+
+Current status:
+
+- robust recorded command q analysis is fully supported,
+- full recompute mode requires target xyzabc in logs and SDK availability.
+
+Plots are intentionally split by arm/metric to stay readable:
+
+- `left_q_joints.png`
+- `right_q_joints.png`
+- `q_step_deg.png`
+- `q_velocity_deg_s.png`
+
+Example:
+
+```bash
+python scripts/replay_teleop_ik.py --input logs/<session>/teleop_session.jsonl --mode recorded
+```

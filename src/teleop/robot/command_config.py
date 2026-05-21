@@ -23,7 +23,7 @@ class RobotCommandConfig:
     ctrl_hz: int = 100
 
     max_joint_step_deg: float = 5.0
-    max_joint_velocity_deg_s: float = 90.0
+    max_joint_velocity_deg_s: float = 180.0
 
     send_left: bool = True
     send_right: bool = True
