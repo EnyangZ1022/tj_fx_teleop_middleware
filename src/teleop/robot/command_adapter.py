@@ -61,12 +61,6 @@ def _clip_joint_step(
     )
 
 
-def _append_solver_note(base_note: str, extra_note: str) -> str:
-    if not base_note:
-        return str(extra_note)
-    return f"{base_note}|{extra_note}"
-
-
 def _validate_arm_target(target: ArmCommandTarget) -> tuple[bool, str]:
     if not bool(target.valid):
         reason = str(target.reason).strip()
@@ -92,7 +86,9 @@ class _SideProcessResult:
     q_deg: tuple[float, float, float, float, float, float, float] | None
     solver_note: str
     step_delta_deg: float | None
-    step_ramped: bool
+    velocity_delta_deg_s: float | None
+    allowed_step_deg: float | None
+    joint_ramped: bool
     candidate_q_deg: tuple[float, float, float, float, float, float, float] | None
     sent_q_deg: tuple[float, float, float, float, float, float, float] | None
 
@@ -104,7 +100,9 @@ def _new_side_result(
     q_deg: tuple[float, float, float, float, float, float, float] | None,
     solver_note: str,
     step_delta_deg: float | None,
-    step_ramped: bool,
+    velocity_delta_deg_s: float | None,
+    allowed_step_deg: float | None,
+    joint_ramped: bool,
     candidate_q_deg: tuple[float, float, float, float, float, float, float] | None,
     sent_q_deg: tuple[float, float, float, float, float, float, float] | None,
 ) -> _SideProcessResult:
@@ -114,7 +112,9 @@ def _new_side_result(
         q_deg=q_deg,
         solver_note=str(solver_note),
         step_delta_deg=(float(step_delta_deg) if step_delta_deg is not None else None),
-        step_ramped=bool(step_ramped),
+        velocity_delta_deg_s=(float(velocity_delta_deg_s) if velocity_delta_deg_s is not None else None),
+        allowed_step_deg=(float(allowed_step_deg) if allowed_step_deg is not None else None),
+        joint_ramped=bool(joint_ramped),
         candidate_q_deg=candidate_q_deg,
         sent_q_deg=sent_q_deg,
     )
@@ -136,6 +136,12 @@ def _new_result(dry_run: bool) -> dict[str, Any]:
         "right_sent_q_deg": None,
         "left_step_delta_deg": None,
         "right_step_delta_deg": None,
+        "left_velocity_delta_deg_s": None,
+        "right_velocity_delta_deg_s": None,
+        "left_allowed_step_deg": None,
+        "right_allowed_step_deg": None,
+        "left_joint_ramped": False,
+        "right_joint_ramped": False,
         "left_step_ramped": False,
         "right_step_ramped": False,
         "left_solver_note": "",
@@ -155,7 +161,8 @@ class RobotCommandAdapter:
 
         self.last_sent_left_q_deg: tuple[float, float, float, float, float, float, float] | None = None
         self.last_sent_right_q_deg: tuple[float, float, float, float, float, float, float] | None = None
-        self.last_send_time_ns: int | None = None
+        self.last_send_time_left_ns: int | None = None
+        self.last_send_time_right_ns: int | None = None
 
         self._prepared: bool = False
         self._commands_enabled: bool = False
@@ -262,7 +269,8 @@ class RobotCommandAdapter:
             return result
 
         now = int(time.time_ns() if now_ns is None else now_ns)
-        old_time_ns = self.last_send_time_ns
+        left_old_time_ns = self.last_send_time_left_ns
+        right_old_time_ns = self.last_send_time_right_ns
 
         left_result = self._process_side(
             side="left",
@@ -272,7 +280,7 @@ class RobotCommandAdapter:
             send_allowed=bool(self._config.send_left),
             last_q=self.last_sent_left_q_deg,
             now_ns=now,
-            old_time_ns=old_time_ns,
+            old_time_ns=left_old_time_ns,
             robot=robot,
             dry_run=dry_run,
         )
@@ -285,7 +293,7 @@ class RobotCommandAdapter:
             send_allowed=bool(self._config.send_right),
             last_q=self.last_sent_right_q_deg,
             now_ns=now,
-            old_time_ns=old_time_ns,
+            old_time_ns=right_old_time_ns,
             robot=robot,
             dry_run=dry_run,
         )
@@ -302,17 +310,24 @@ class RobotCommandAdapter:
         result["right_sent_q_deg"] = right_result.sent_q_deg
         result["left_step_delta_deg"] = left_result.step_delta_deg
         result["right_step_delta_deg"] = right_result.step_delta_deg
-        result["left_step_ramped"] = left_result.step_ramped
-        result["right_step_ramped"] = right_result.step_ramped
+        result["left_velocity_delta_deg_s"] = left_result.velocity_delta_deg_s
+        result["right_velocity_delta_deg_s"] = right_result.velocity_delta_deg_s
+        result["left_allowed_step_deg"] = left_result.allowed_step_deg
+        result["right_allowed_step_deg"] = right_result.allowed_step_deg
+        result["left_joint_ramped"] = left_result.joint_ramped
+        result["right_joint_ramped"] = right_result.joint_ramped
+        # Backward-compatible aliases for existing logs and analysis scripts.
+        result["left_step_ramped"] = left_result.joint_ramped
+        result["right_step_ramped"] = right_result.joint_ramped
         result["left_solver_note"] = left_result.solver_note
         result["right_solver_note"] = right_result.solver_note
 
         if left_result.sent and left_result.sent_q_deg is not None:
             self.last_sent_left_q_deg = left_result.sent_q_deg
+            self.last_send_time_left_ns = now
         if right_result.sent and right_result.sent_q_deg is not None:
             self.last_sent_right_q_deg = right_result.sent_q_deg
-        if left_result.sent or right_result.sent:
-            self.last_send_time_ns = now
+            self.last_send_time_right_ns = now
 
         if dry_run:
             result["ok"] = left_result.reason == "dry_run" or right_result.reason == "dry_run"
@@ -341,7 +356,9 @@ class RobotCommandAdapter:
                 q_deg=None,
                 solver_note="",
                 step_delta_deg=None,
-                step_ramped=False,
+                velocity_delta_deg_s=None,
+                allowed_step_deg=None,
+                joint_ramped=False,
                 candidate_q_deg=None,
                 sent_q_deg=None,
             )
@@ -353,7 +370,9 @@ class RobotCommandAdapter:
                 q_deg=None,
                 solver_note="",
                 step_delta_deg=None,
-                step_ramped=False,
+                velocity_delta_deg_s=None,
+                allowed_step_deg=None,
+                joint_ramped=False,
                 candidate_q_deg=None,
                 sent_q_deg=None,
             )
@@ -365,7 +384,9 @@ class RobotCommandAdapter:
                 q_deg=None,
                 solver_note="ik_adapter_missing",
                 step_delta_deg=None,
-                step_ramped=False,
+                velocity_delta_deg_s=None,
+                allowed_step_deg=None,
+                joint_ramped=False,
                 candidate_q_deg=None,
                 sent_q_deg=None,
             )
@@ -378,7 +399,9 @@ class RobotCommandAdapter:
                 q_deg=None,
                 solver_note="",
                 step_delta_deg=None,
-                step_ramped=False,
+                velocity_delta_deg_s=None,
+                allowed_step_deg=None,
+                joint_ramped=False,
                 candidate_q_deg=None,
                 sent_q_deg=None,
             )
@@ -396,7 +419,9 @@ class RobotCommandAdapter:
                 q_deg=None,
                 solver_note=solver_note,
                 step_delta_deg=None,
-                step_ramped=False,
+                velocity_delta_deg_s=None,
+                allowed_step_deg=None,
+                joint_ramped=False,
                 candidate_q_deg=None,
                 sent_q_deg=None,
             )
@@ -408,7 +433,9 @@ class RobotCommandAdapter:
                 q_deg=None,
                 solver_note=solver_note,
                 step_delta_deg=None,
-                step_ramped=False,
+                velocity_delta_deg_s=None,
+                allowed_step_deg=None,
+                joint_ramped=False,
                 candidate_q_deg=None,
                 sent_q_deg=None,
             )
@@ -416,59 +443,73 @@ class RobotCommandAdapter:
         q_candidate = _normalize_q7(q)
         q_to_send = q_candidate
         step_delta_deg: float | None = None
-        step_ramped = False
+        velocity_delta_deg_s: float | None = None
+        allowed_step_deg: float | None = None
+        joint_ramped = False
 
         if last_q is not None:
             step_delta_deg = _max_abs_joint_delta(q_candidate, last_q)
-            if step_delta_deg > float(self._config.max_joint_step_deg):
-                if self._config.joint_step_limit_mode == "reject":
+            max_step_deg = float(self._config.max_joint_step_deg)
+            dt_s: float | None = None
+            if old_time_ns is not None:
+                dt_candidate_s = float(now_ns - old_time_ns) / 1_000_000_000.0
+                if dt_candidate_s > 0.0:
+                    dt_s = dt_candidate_s
+
+            # Fallback to nominal command period when previous timestamp is unavailable/invalid.
+            if dt_s is None:
+                ctrl_hz = float(self._config.ctrl_hz)
+                if ctrl_hz > 0.0:
+                    dt_s = 1.0 / ctrl_hz
+
+            if dt_s is None or dt_s <= 0.0:
+                return _new_side_result(
+                    sent=False,
+                    reason="invalid_dt_no_fallback",
+                    q_deg=q_candidate,
+                    solver_note=solver_note,
+                    step_delta_deg=step_delta_deg,
+                    velocity_delta_deg_s=None,
+                    allowed_step_deg=None,
+                    joint_ramped=False,
+                    candidate_q_deg=q_candidate,
+                    sent_q_deg=None,
+                )
+
+            velocity_step_deg = float(self._config.max_joint_velocity_deg_s) * dt_s
+            allowed_step_deg = min(max_step_deg, velocity_step_deg)
+            velocity_delta_deg_s = step_delta_deg / dt_s
+
+            if step_delta_deg > allowed_step_deg:
+                if self._config.joint_limit_mode == "reject":
+                    if step_delta_deg > max_step_deg:
+                        reject_reason = "joint_step_limit"
+                    elif step_delta_deg > velocity_step_deg:
+                        reject_reason = "joint_velocity_limit"
+                    else:
+                        reject_reason = "joint_limit"
                     return _new_side_result(
                         sent=False,
-                        reason="joint_step_limit",
+                        reason=reject_reason,
                         q_deg=q_candidate,
                         solver_note=solver_note,
                         step_delta_deg=step_delta_deg,
-                        step_ramped=False,
+                        velocity_delta_deg_s=velocity_delta_deg_s,
+                        allowed_step_deg=allowed_step_deg,
+                        joint_ramped=False,
                         candidate_q_deg=q_candidate,
                         sent_q_deg=None,
                     )
 
-                if self._config.joint_step_limit_mode == "ramp":
+                if self._config.joint_limit_mode == "ramp":
                     q_to_send = _clip_joint_step(
                         q_candidate=q_candidate,
                         q_ref=last_q,
-                        max_step_deg=float(self._config.max_joint_step_deg),
+                        max_step_deg=allowed_step_deg,
                     )
-                    step_ramped = True
-                    solver_note = _append_solver_note(solver_note, "joint_step_ramped")
+                    joint_ramped = True
                 else:
-                    raise ValueError(f"Unsupported joint_step_limit_mode={self._config.joint_step_limit_mode!r}")
-
-            if old_time_ns is not None:
-                dt_s = float(now_ns - old_time_ns) / 1_000_000_000.0
-                if dt_s <= 0.0:
-                    return _new_side_result(
-                        sent=False,
-                        reason="invalid_dt",
-                        q_deg=q_to_send,
-                        solver_note=solver_note,
-                        step_delta_deg=step_delta_deg,
-                        step_ramped=step_ramped,
-                        candidate_q_deg=q_candidate,
-                        sent_q_deg=None,
-                    )
-                max_velocity = _max_abs_joint_delta(q_to_send, last_q) / dt_s
-                if max_velocity > float(self._config.max_joint_velocity_deg_s):
-                    return _new_side_result(
-                        sent=False,
-                        reason="joint_velocity_limit",
-                        q_deg=q_to_send,
-                        solver_note=solver_note,
-                        step_delta_deg=step_delta_deg,
-                        step_ramped=step_ramped,
-                        candidate_q_deg=q_candidate,
-                        sent_q_deg=None,
-                    )
+                    raise ValueError(f"Unsupported joint_limit_mode={self._config.joint_limit_mode!r}")
 
         if dry_run:
             return _new_side_result(
@@ -477,7 +518,9 @@ class RobotCommandAdapter:
                 q_deg=q_to_send,
                 solver_note=solver_note,
                 step_delta_deg=step_delta_deg,
-                step_ramped=step_ramped,
+                velocity_delta_deg_s=velocity_delta_deg_s,
+                allowed_step_deg=allowed_step_deg,
+                joint_ramped=joint_ramped,
                 candidate_q_deg=q_candidate,
                 sent_q_deg=q_to_send,
             )
@@ -490,7 +533,9 @@ class RobotCommandAdapter:
                 q_deg=q_to_send,
                 solver_note=solver_note,
                 step_delta_deg=step_delta_deg,
-                step_ramped=step_ramped,
+                velocity_delta_deg_s=velocity_delta_deg_s,
+                allowed_step_deg=allowed_step_deg,
+                joint_ramped=joint_ramped,
                 candidate_q_deg=q_candidate,
                 sent_q_deg=q_to_send,
             )
@@ -501,7 +546,9 @@ class RobotCommandAdapter:
                 q_deg=q_to_send,
                 solver_note=solver_note,
                 step_delta_deg=step_delta_deg,
-                step_ramped=step_ramped,
+                velocity_delta_deg_s=velocity_delta_deg_s,
+                allowed_step_deg=allowed_step_deg,
+                joint_ramped=joint_ramped,
                 candidate_q_deg=q_candidate,
                 sent_q_deg=None,
             )
@@ -523,7 +570,8 @@ class RobotCommandAdapter:
     def reset_last_sent(self) -> None:
         self.last_sent_left_q_deg = None
         self.last_sent_right_q_deg = None
-        self.last_send_time_ns = None
+        self.last_send_time_left_ns = None
+        self.last_send_time_right_ns = None
 
 
 __all__ = ["RobotCommandAdapter"]

@@ -67,21 +67,29 @@ Before Stage 6B command sending, robot startup should pass Stage 6B-pre and reac
 - control_mode defaults to `joint_position`
 - IK failure rejects command
 - invalid target rejects command
-- joint step limit defaults to `reject` and rejects large jumps
-- optional `ramp` mode clips excessive per-joint deltas to an intermediate command
-- joint velocity limit rejects excessive speed
+- joint limit mode defaults to `reject` and rejects large jumps
+- optional `ramp` mode clips excessive per-joint deltas to a safe intermediate command
 - pause stops sending new commands
 - emergency stop is physical; software side only blocks sending and can disconnect
 
-## Joint Step Limit Modes
+## Unified Joint Limit Mode
 
-`joint_step_limit_mode` supports two behaviors:
+`joint_limit_mode` supports two behaviors:
 
 - `reject` (default):
-	- if max absolute joint delta exceeds `max_joint_step_deg`, reject with `joint_step_limit`.
+	- compute per-cycle `allowed_step_deg = min(max_joint_step_deg, max_joint_velocity_deg_s * dt_s)`.
+	- if candidate max joint delta exceeds `allowed_step_deg`, reject.
+	- reason is `joint_step_limit` when step bound is violated first, otherwise `joint_velocity_limit`.
 - `ramp` (experimental):
-	- if delta exceeds `max_joint_step_deg`, clip each joint delta into `[-max_joint_step_deg, +max_joint_step_deg]` and send the clipped intermediate q.
-	- velocity limit checks are still enforced on the clipped q before sending.
+	- use the same `allowed_step_deg` rule.
+	- clip each joint delta into `[-allowed_step_deg, +allowed_step_deg]` and send the clipped intermediate q.
+	- keep reason as `sent` on successful send; use `left_joint_ramped/right_joint_ramped` as diagnostic flags.
+
+Velocity timing uses per-arm send timestamps:
+
+- left arm velocity dt uses left send timestamp only
+- right arm velocity dt uses right send timestamp only
+- one arm send no longer changes the other arm dt used for velocity limits
 
 Ramp mode is a recovery/smoothing strategy. It may lag behind fast-moving teleop targets because the robot follows bounded joint-space increments.
 

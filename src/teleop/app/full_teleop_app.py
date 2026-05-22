@@ -465,6 +465,24 @@ class FullTeleopApp:
                 "command_right_step_delta_deg": (
                     command_result.get("right_step_delta_deg") if command_result is not None else None
                 ),
+                "command_left_velocity_delta_deg_s": (
+                    command_result.get("left_velocity_delta_deg_s") if command_result is not None else None
+                ),
+                "command_right_velocity_delta_deg_s": (
+                    command_result.get("right_velocity_delta_deg_s") if command_result is not None else None
+                ),
+                "command_left_allowed_step_deg": (
+                    command_result.get("left_allowed_step_deg") if command_result is not None else None
+                ),
+                "command_right_allowed_step_deg": (
+                    command_result.get("right_allowed_step_deg") if command_result is not None else None
+                ),
+                "command_left_joint_ramped": (
+                    command_result.get("left_joint_ramped") if command_result is not None else None
+                ),
+                "command_right_joint_ramped": (
+                    command_result.get("right_joint_ramped") if command_result is not None else None
+                ),
                 "command_left_step_ramped": command_result.get("left_step_ramped") if command_result is not None else None,
                 "command_right_step_ramped": (
                     command_result.get("right_step_ramped") if command_result is not None else None

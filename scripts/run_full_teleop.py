@@ -82,16 +82,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Override orientation filter fallback dt in seconds (default 0.01)",
     )
     parser.add_argument(
-        "--joint-step-limit-mode",
+        "--joint-limit-mode",
         choices=["reject", "ramp"],
         default="reject",
-        help="Joint step-limit handling mode (reject default, ramp experimental)",
+        help="Unified joint limit handling mode (reject default, ramp experimental)",
     )
     parser.add_argument(
         "--max-joint-step-deg",
         type=float,
         default=None,
         help="Override max joint step limit in degrees (keeps config default when omitted)",
+    )
+    parser.add_argument(
+        "--max-joint-velocity-deg-s",
+        type=float,
+        default=None,
+        help="Override max joint velocity limit in deg/s (keeps config default when omitted)",
     )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
@@ -173,10 +179,12 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
 
 def _build_robot_command_config(args: argparse.Namespace) -> RobotCommandConfig:
     overrides: dict[str, float | str] = {
-        "joint_step_limit_mode": str(args.joint_step_limit_mode),
+        "joint_limit_mode": str(args.joint_limit_mode),
     }
     if args.max_joint_step_deg is not None:
         overrides["max_joint_step_deg"] = float(args.max_joint_step_deg)
+    if args.max_joint_velocity_deg_s is not None:
+        overrides["max_joint_velocity_deg_s"] = float(args.max_joint_velocity_deg_s)
     return RobotCommandConfig(**overrides)
 
 
@@ -209,6 +217,9 @@ def _validate_runtime_args(args: argparse.Namespace) -> str | None:
     if args.max_joint_step_deg is not None and float(args.max_joint_step_deg) <= 0.0:
         return "--max-joint-step-deg must be > 0"
 
+    if args.max_joint_velocity_deg_s is not None and float(args.max_joint_velocity_deg_s) <= 0.0:
+        return "--max-joint-velocity-deg-s must be > 0"
+
     return None
 
 
@@ -230,7 +241,7 @@ def main() -> int:
 
     print(f"Control mode: {app_config.control_mode}")
     print(f"Teleop mode: {app_config.teleop_mode}")
-    print(f"joint_step_limit_mode: {robot_command_config.joint_step_limit_mode}")
+    print(f"joint_limit_mode: {robot_command_config.joint_limit_mode}")
     print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
     print(f"max_joint_velocity_deg_s: {float(robot_command_config.max_joint_velocity_deg_s):.3f}")
     if app_config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:

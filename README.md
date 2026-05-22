@@ -22,7 +22,7 @@ Diagnostic UI and asynchronous logging are supported as optional tools.
 - Experimental position+orientation teleop mode (explicit opt-in)
 - Quaternion SO(3) Slerp low-pass orientation filter in position_orientation mode
 - Robot command control mode selection (`joint_position` default, optional `joint_impedance`)
-- Joint step-limit mode selection (`reject` default, optional experimental `ramp`)
+- Unified joint-limit mode selection (`reject` default, optional experimental `ramp`)
 
 ## 2. Project layout
 
@@ -236,21 +236,22 @@ python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --ena
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --control-mode joint_impedance
 ```
 
-Joint step-limit handling:
+Unified joint-limit handling:
 
 ```bash
-# Default safe behavior: reject oversized joint steps
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --joint-step-limit-mode reject
+# Default safe behavior: reject oversized joint deltas
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --joint-limit-mode reject
 
-# Experimental behavior: ramp oversized IK jumps with bounded per-joint increments
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --joint-step-limit-mode ramp --max-joint-step-deg 1.8
+# Experimental behavior: ramp oversized IK jumps with unified step/velocity bound
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --joint-limit-mode ramp --max-joint-step-deg 1.6 --max-joint-velocity-deg-s 190
 ```
 
 Notes:
 
-- `--joint-step-limit-mode reject` is the default.
-- `--joint-step-limit-mode ramp` clips each joint delta to `[-max_joint_step_deg, +max_joint_step_deg]` and sends an intermediate q.
-- ramp mode still applies joint velocity limits and may feel laggy when targets move quickly.
+- `--joint-limit-mode reject` is the default.
+- `--joint-limit-mode ramp` computes `allowed_step_deg = min(max_joint_step_deg, max_joint_velocity_deg_s * dt_s)` and clips each joint delta into `[-allowed_step_deg, +allowed_step_deg]`.
+- ramp mode can trade exact instantaneous target tracking for smooth joint-space catch-up.
+- velocity dt is tracked per arm, so one arm send timing does not affect the other arm velocity check.
 
 `joint_impedance` safety rule in this MVP:
 

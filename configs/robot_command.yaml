@@ -5,6 +5,7 @@ robot_command:
   ctrl_hz: 100
 
   limits:
+    joint_limit_mode: reject
     max_joint_step_deg: 5.0
     max_joint_velocity_deg_s: 90.0
 

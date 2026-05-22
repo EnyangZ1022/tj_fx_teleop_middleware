@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def _load_run_full_teleop_module():
     script_path = Path(__file__).resolve().parents[1] / "scripts" / "run_full_teleop.py"
@@ -141,29 +143,33 @@ def test_validate_runtime_args_rejects_orientation_filter_enable_disable_conflic
     assert message == "--enable-orientation-filter and --disable-orientation-filter cannot be used together"
 
 
-def test_cli_joint_step_limit_mode_and_max_step_override() -> None:
+def test_cli_joint_limit_mode_and_joint_limits_override() -> None:
     module = _load_run_full_teleop_module()
 
     args = module.parse_args([
-        "--joint-step-limit-mode",
+        "--joint-limit-mode",
         "ramp",
         "--max-joint-step-deg",
         "1.8",
+        "--max-joint-velocity-deg-s",
+        "190",
     ])
     robot_cfg = module._build_robot_command_config(args)
 
-    assert robot_cfg.joint_step_limit_mode == "ramp"
+    assert robot_cfg.joint_limit_mode == "ramp"
     assert robot_cfg.max_joint_step_deg == 1.8
+    assert robot_cfg.max_joint_velocity_deg_s == 190.0
 
 
-def test_cli_joint_step_limit_defaults_preserve_robot_command_default() -> None:
+def test_cli_joint_limit_defaults_preserve_robot_command_default() -> None:
     module = _load_run_full_teleop_module()
 
     args = module.parse_args([])
     robot_cfg = module._build_robot_command_config(args)
 
-    assert robot_cfg.joint_step_limit_mode == "reject"
+    assert robot_cfg.joint_limit_mode == "reject"
     assert robot_cfg.max_joint_step_deg == module.RobotCommandConfig().max_joint_step_deg
+    assert robot_cfg.max_joint_velocity_deg_s == module.RobotCommandConfig().max_joint_velocity_deg_s
 
 
 def test_validate_runtime_args_rejects_non_positive_max_joint_step_deg() -> None:
@@ -173,3 +179,19 @@ def test_validate_runtime_args_rejects_non_positive_max_joint_step_deg() -> None
     message = module._validate_runtime_args(args)
 
     assert message == "--max-joint-step-deg must be > 0"
+
+
+def test_validate_runtime_args_rejects_non_positive_max_joint_velocity_deg_s() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--max-joint-velocity-deg-s", "0"])
+    message = module._validate_runtime_args(args)
+
+    assert message == "--max-joint-velocity-deg-s must be > 0"
+
+
+def test_cli_rejects_legacy_joint_step_limit_mode_flag() -> None:
+    module = _load_run_full_teleop_module()
+
+    with pytest.raises(SystemExit):
+        module.parse_args(["--joint-step-limit-mode", "ramp"])

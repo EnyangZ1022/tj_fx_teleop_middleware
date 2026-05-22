@@ -6,7 +6,7 @@ from teleop.robot.ik_config import IKSolverConfig
 
 
 _ALLOWED_CONTROL_MODES = {"joint_position", "joint_impedance"}
-_ALLOWED_STEP_LIMIT_MODES = {"reject", "ramp"}
+_ALLOWED_JOINT_LIMIT_MODES = {"reject", "ramp"}
 
 
 def _normalize_tuple7(name: str, values: tuple[float, ...]) -> tuple[float, ...]:
@@ -23,9 +23,9 @@ class RobotCommandConfig:
     control_mode: str = "joint_position"
     ctrl_hz: int = 100
 
-    max_joint_step_deg: float = 12.0
+    max_joint_step_deg: float = 1.8
     max_joint_velocity_deg_s: float = 180.0
-    joint_step_limit_mode: str = "reject"
+    joint_limit_mode: str = "reject"
 
     send_left: bool = True
     send_right: bool = True
@@ -44,12 +44,12 @@ class RobotCommandConfig:
             )
         object.__setattr__(self, "control_mode", mode)
 
-        step_mode = str(self.joint_step_limit_mode).strip().lower()
-        if step_mode not in _ALLOWED_STEP_LIMIT_MODES:
+        joint_limit_mode = str(self.joint_limit_mode).strip().lower()
+        if joint_limit_mode not in _ALLOWED_JOINT_LIMIT_MODES:
             raise ValueError(
-                f"joint_step_limit_mode must be one of {_ALLOWED_STEP_LIMIT_MODES}, got {self.joint_step_limit_mode!r}"
+                f"joint_limit_mode must be one of {_ALLOWED_JOINT_LIMIT_MODES}, got {self.joint_limit_mode!r}"
             )
-        object.__setattr__(self, "joint_step_limit_mode", step_mode)
+        object.__setattr__(self, "joint_limit_mode", joint_limit_mode)
 
         if int(self.ctrl_hz) <= 0:
             raise ValueError("ctrl_hz must be positive")
