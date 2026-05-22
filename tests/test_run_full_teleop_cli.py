@@ -28,6 +28,10 @@ def test_cli_default_is_position_only() -> None:
     assert cfg.orientation_tracking.enabled is False
     assert cfg.orientation_tracking.orientation_algorithm == "absolute_matrix"
     assert cfg.orientation_filter.enabled is False
+    assert args.enable_win_high_res_timer is False
+    assert args.win_high_res_timer_ms == 1
+    assert args.spin_threshold_ms == 0.5
+    assert cfg.spin_threshold_s == 0.0005
 
 
 def test_cli_teleop_mode_position_orientation() -> None:
@@ -195,3 +199,59 @@ def test_cli_rejects_legacy_joint_step_limit_mode_flag() -> None:
 
     with pytest.raises(SystemExit):
         module.parse_args(["--joint-step-limit-mode", "ramp"])
+
+
+def test_cli_enable_win_high_res_timer_flag() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--enable-win-high-res-timer"])
+
+    assert args.enable_win_high_res_timer is True
+    assert args.win_high_res_timer_ms == 1
+
+
+def test_cli_win_high_res_timer_period_override() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--win-high-res-timer-ms", "2"])
+
+    assert args.win_high_res_timer_ms == 2
+
+
+def test_cli_win_high_res_timer_period_zero_fails() -> None:
+    module = _load_run_full_teleop_module()
+
+    with pytest.raises(SystemExit):
+        module.parse_args(["--win-high-res-timer-ms", "0"])
+
+
+def test_cli_spin_threshold_ms_override_propagates_to_seconds() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--spin-threshold-ms", "0.2"])
+    cfg = module._build_app_config(args)
+
+    assert args.spin_threshold_ms == 0.2
+    assert cfg.spin_threshold_s == pytest.approx(0.0002)
+
+
+def test_cli_spin_threshold_ms_negative_fails() -> None:
+    module = _load_run_full_teleop_module()
+
+    with pytest.raises(SystemExit):
+        module.parse_args(["--spin-threshold-ms", "-0.1"])
+
+
+def test_windows_high_res_timer_context_noop_when_disabled() -> None:
+    module = _load_run_full_teleop_module()
+
+    with module._windows_high_res_timer(enable=False, period_ms=1):
+        pass
+
+
+def test_windows_high_res_timer_context_noop_on_linux(monkeypatch) -> None:
+    module = _load_run_full_teleop_module()
+    monkeypatch.setattr(module.platform, "system", lambda: "Linux")
+
+    with module._windows_high_res_timer(enable=True, period_ms=1):
+        pass

@@ -107,6 +107,10 @@ def _prepare_adapter(config: RobotCommandConfig | None = None) -> tuple[RobotCom
     return adapter, sdk
 
 
+def _count_calls(robot: _FakeRobot, name: str) -> int:
+    return sum(1 for call in robot.calls if call[0] == name)
+
+
 def test_default_joint_limit_mode_is_reject() -> None:
     cfg = RobotCommandConfig()
     assert cfg.joint_limit_mode == "reject"
@@ -148,6 +152,109 @@ def test_command_enabled_sends_joint_command() -> None:
     assert result["left_reason"] == "sent"
     assert any(c[0] == "set_joint_cmd_pose" for c in sdk.robot.calls)
     assert any(c[0] == "send_cmd" for c in sdk.robot.calls)
+
+
+def test_batch_send_combines_dual_arm_into_single_packet() -> None:
+    adapter, sdk = _prepare_adapter(RobotCommandConfig(dry_run=False, command_enabled=True))
+    adapter.left_ik_adapter = _QueueIK([(1, 2, 3, 4, 5, 6, 7)])
+    adapter.right_ik_adapter = _QueueIK([(11, 12, 13, 14, 15, 16, 17)])
+
+    result = adapter.send_command(
+        _dual(
+            _arm_target(),
+            _arm_target(110.0, ik_ref=(90, 90, -90, -90, 0, 0, 0)),
+        ),
+        now_ns=1_000_000_000,
+    )
+
+    assert result["left_sent"] is True
+    assert result["right_sent"] is True
+    assert _count_calls(sdk.robot, "clear_set") == 1
+    assert _count_calls(sdk.robot, "set_joint_cmd_pose") == 2
+    assert _count_calls(sdk.robot, "send_cmd") == 1
+
+
+def test_batch_send_single_side_still_uses_single_packet() -> None:
+    adapter, sdk = _prepare_adapter(RobotCommandConfig(dry_run=False, command_enabled=True))
+    adapter.right_ik_adapter = _QueueIK([(11, 12, 13, 14, 15, 16, 17)])
+
+    result = adapter.send_command(
+        _dual(None, _arm_target(110.0, ik_ref=(90, 90, -90, -90, 0, 0, 0))),
+        now_ns=1_000_000_000,
+    )
+
+    assert result["left_reason"] == "no_target"
+    assert result["right_sent"] is True
+    assert _count_calls(sdk.robot, "clear_set") == 1
+    assert _count_calls(sdk.robot, "set_joint_cmd_pose") == 1
+    assert _count_calls(sdk.robot, "send_cmd") == 1
+
+
+def test_batch_send_allows_other_side_when_one_side_rejected() -> None:
+    adapter, sdk = _prepare_adapter(
+        RobotCommandConfig(dry_run=False, command_enabled=True, max_joint_step_deg=5.0, max_joint_velocity_deg_s=1000.0)
+    )
+    adapter.left_ik_adapter = _QueueIK([
+        (0, 0, 0, 0, 0, 0, 0),
+        (20, 0, 0, 0, 0, 0, 0),
+    ])
+    adapter.right_ik_adapter = _QueueIK([
+        (0, 0, 0, 0, 0, 0, 0),
+        (2, 0, 0, 0, 0, 0, 0),
+    ])
+
+    first = adapter.send_command(
+        _dual(
+            _arm_target(),
+            _arm_target(110.0, ik_ref=(90, 90, -90, -90, 0, 0, 0)),
+        ),
+        now_ns=1_000_000_000,
+    )
+    assert first["left_sent"] is True
+    assert first["right_sent"] is True
+
+    call_count_before = len(sdk.robot.calls)
+    second = adapter.send_command(
+        _dual(
+            _arm_target(101.0),
+            _arm_target(111.0, ik_ref=(90, 90, -90, -90, 0, 0, 0)),
+        ),
+        now_ns=2_000_000_000,
+    )
+
+    assert second["left_sent"] is False
+    assert second["left_reason"] == "joint_step_limit"
+    assert second["right_sent"] is True
+    tail_calls = sdk.robot.calls[call_count_before:]
+    assert sum(1 for c in tail_calls if c[0] == "clear_set") == 1
+    assert sum(1 for c in tail_calls if c[0] == "set_joint_cmd_pose") == 1
+    assert sum(1 for c in tail_calls if c[0] == "send_cmd") == 1
+
+
+def test_batch_send_failure_marks_both_sides_failed_and_keeps_state() -> None:
+    adapter, sdk = _prepare_adapter(RobotCommandConfig(dry_run=False, command_enabled=True))
+    adapter.left_ik_adapter = _QueueIK([(1, 2, 3, 4, 5, 6, 7)])
+    adapter.right_ik_adapter = _QueueIK([(11, 12, 13, 14, 15, 16, 17)])
+    sdk.robot.send_cmd_return = 0
+
+    result = adapter.send_command(
+        _dual(
+            _arm_target(),
+            _arm_target(110.0, ik_ref=(90, 90, -90, -90, 0, 0, 0)),
+        ),
+        now_ns=1_000_000_000,
+    )
+
+    assert result["ok"] is False
+    assert result["left_sent"] is False
+    assert result["right_sent"] is False
+    assert result["left_reason"] == "send_failed"
+    assert result["right_reason"] == "send_failed"
+    assert adapter.last_sent_left_q_deg is None
+    assert adapter.last_sent_right_q_deg is None
+    assert _count_calls(sdk.robot, "clear_set") == 1
+    assert _count_calls(sdk.robot, "set_joint_cmd_pose") == 2
+    assert _count_calls(sdk.robot, "send_cmd") == 1
 
 
 def test_per_arm_send_timestamps_are_independent() -> None:

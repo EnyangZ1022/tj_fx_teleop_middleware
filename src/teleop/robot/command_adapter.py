@@ -8,7 +8,7 @@ from teleop.core.command_frame import ArmCommandTarget, DualArmCommandTarget
 from teleop.robot.command_config import RobotCommandConfig
 from teleop.robot.ik_adapter import ArmIKAdapter
 from teleop.robot.sdk_adapter import RobotSDKReadOnlyAdapter
-from teleop.robot.startup import enter_position_mode, send_joint_command
+from teleop.robot.startup import enter_position_mode
 
 
 def _normalize_q7(values: Sequence[float]) -> tuple[float, float, float, float, float, float, float]:
@@ -91,6 +91,20 @@ class _SideProcessResult:
     joint_ramped: bool
     candidate_q_deg: tuple[float, float, float, float, float, float, float] | None
     sent_q_deg: tuple[float, float, float, float, float, float, float] | None
+
+
+@dataclass(frozen=True)
+class _PreparedSideCommand:
+    send_planned: bool
+    pre_reason: str
+    q_to_send: tuple[float, float, float, float, float, float, float] | None
+    q_display_deg: tuple[float, float, float, float, float, float, float] | None
+    solver_note: str
+    step_delta_deg: float | None
+    velocity_delta_deg_s: float | None
+    allowed_step_deg: float | None
+    joint_ramped: bool
+    candidate_q_deg: tuple[float, float, float, float, float, float, float] | None
 
 
 def _new_side_result(
@@ -272,30 +286,46 @@ class RobotCommandAdapter:
         left_old_time_ns = self.last_send_time_left_ns
         right_old_time_ns = self.last_send_time_right_ns
 
-        left_result = self._process_side(
+        left_prepared = self._prepare_side(
             side="left",
-            arm=self._sdk_adapter._config.left_arm,
             target=command.left,
             ik_adapter=self.left_ik_adapter,
             send_allowed=bool(self._config.send_left),
             last_q=self.last_sent_left_q_deg,
             now_ns=now,
             old_time_ns=left_old_time_ns,
-            robot=robot,
-            dry_run=dry_run,
         )
 
-        right_result = self._process_side(
+        right_prepared = self._prepare_side(
             side="right",
-            arm=self._sdk_adapter._config.right_arm,
             target=command.right,
             ik_adapter=self.right_ik_adapter,
             send_allowed=bool(self._config.send_right),
             last_q=self.last_sent_right_q_deg,
             now_ns=now,
             old_time_ns=right_old_time_ns,
-            robot=robot,
+        )
+
+        packet_sent = False
+        if not dry_run:
+            commands: list[tuple[str, tuple[float, float, float, float, float, float, float]]] = []
+            if left_prepared.send_planned and left_prepared.q_to_send is not None:
+                commands.append((self._sdk_adapter._config.left_arm, left_prepared.q_to_send))
+            if right_prepared.send_planned and right_prepared.q_to_send is not None:
+                commands.append((self._sdk_adapter._config.right_arm, right_prepared.q_to_send))
+
+            if commands:
+                packet_sent = self._send_prepared_commands(robot=robot, commands=commands)
+
+        left_result = self._finalize_side_result(
+            prepared=left_prepared,
             dry_run=dry_run,
+            packet_sent=packet_sent,
+        )
+        right_result = self._finalize_side_result(
+            prepared=right_prepared,
+            dry_run=dry_run,
+            packet_sent=packet_sent,
         )
 
         result["left_sent"] = left_result.sent
@@ -336,74 +366,71 @@ class RobotCommandAdapter:
 
         return result
 
-    def _process_side(
+    def _prepare_side(
         self,
         side: str,
-        arm: str,
         target: ArmCommandTarget | None,
         ik_adapter: ArmIKAdapter | None,
         send_allowed: bool,
         last_q: tuple[float, float, float, float, float, float, float] | None,
         now_ns: int,
         old_time_ns: int | None,
-        robot: Any,
-        dry_run: bool,
-    ) -> _SideProcessResult:
+    ) -> _PreparedSideCommand:
         if target is None:
-            return _new_side_result(
-                sent=False,
-                reason="no_target",
-                q_deg=None,
+            return _PreparedSideCommand(
+                send_planned=False,
+                pre_reason="no_target",
+                q_to_send=None,
+                q_display_deg=None,
                 solver_note="",
                 step_delta_deg=None,
                 velocity_delta_deg_s=None,
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
-                sent_q_deg=None,
             )
 
         if not send_allowed:
-            return _new_side_result(
-                sent=False,
-                reason="send_disabled",
-                q_deg=None,
+            return _PreparedSideCommand(
+                send_planned=False,
+                pre_reason="send_disabled",
+                q_to_send=None,
+                q_display_deg=None,
                 solver_note="",
                 step_delta_deg=None,
                 velocity_delta_deg_s=None,
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
-                sent_q_deg=None,
             )
 
         if ik_adapter is None:
-            return _new_side_result(
-                sent=False,
-                reason="ik_adapter_missing",
-                q_deg=None,
+            return _PreparedSideCommand(
+                send_planned=False,
+                pre_reason="ik_adapter_missing",
+                q_to_send=None,
+                q_display_deg=None,
                 solver_note="ik_adapter_missing",
                 step_delta_deg=None,
                 velocity_delta_deg_s=None,
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
-                sent_q_deg=None,
             )
 
         valid, reason = _validate_arm_target(target)
         if not valid:
-            return _new_side_result(
-                sent=False,
-                reason=reason,
-                q_deg=None,
+            return _PreparedSideCommand(
+                send_planned=False,
+                pre_reason=reason,
+                q_to_send=None,
+                q_display_deg=None,
                 solver_note="",
                 step_delta_deg=None,
                 velocity_delta_deg_s=None,
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
-                sent_q_deg=None,
             )
 
         q = ik_adapter.solve_xyzabc_mm_deg(
@@ -413,31 +440,31 @@ class RobotCommandAdapter:
         )
         solver_note = str(getattr(ik_adapter, "last_solver_note", ""))
         if q is None:
-            return _new_side_result(
-                sent=False,
-                reason="ik_failed",
-                q_deg=None,
+            return _PreparedSideCommand(
+                send_planned=False,
+                pre_reason="ik_failed",
+                q_to_send=None,
+                q_display_deg=None,
                 solver_note=solver_note,
                 step_delta_deg=None,
                 velocity_delta_deg_s=None,
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
-                sent_q_deg=None,
             )
 
         if len(q) != 7:
-            return _new_side_result(
-                sent=False,
-                reason="invalid_ik_result",
-                q_deg=None,
+            return _PreparedSideCommand(
+                send_planned=False,
+                pre_reason="invalid_ik_result",
+                q_to_send=None,
+                q_display_deg=None,
                 solver_note=solver_note,
                 step_delta_deg=None,
                 velocity_delta_deg_s=None,
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
-                sent_q_deg=None,
             )
 
         q_candidate = _normalize_q7(q)
@@ -463,17 +490,17 @@ class RobotCommandAdapter:
                     dt_s = 1.0 / ctrl_hz
 
             if dt_s is None or dt_s <= 0.0:
-                return _new_side_result(
-                    sent=False,
-                    reason="invalid_dt_no_fallback",
-                    q_deg=q_candidate,
+                return _PreparedSideCommand(
+                    send_planned=False,
+                    pre_reason="invalid_dt_no_fallback",
+                    q_to_send=None,
+                    q_display_deg=q_candidate,
                     solver_note=solver_note,
                     step_delta_deg=step_delta_deg,
                     velocity_delta_deg_s=None,
                     allowed_step_deg=None,
                     joint_ramped=False,
                     candidate_q_deg=q_candidate,
-                    sent_q_deg=None,
                 )
 
             velocity_step_deg = float(self._config.max_joint_velocity_deg_s) * dt_s
@@ -488,17 +515,17 @@ class RobotCommandAdapter:
                         reject_reason = "joint_velocity_limit"
                     else:
                         reject_reason = "joint_limit"
-                    return _new_side_result(
-                        sent=False,
-                        reason=reject_reason,
-                        q_deg=q_candidate,
+                    return _PreparedSideCommand(
+                        send_planned=False,
+                        pre_reason=reject_reason,
+                        q_to_send=None,
+                        q_display_deg=q_candidate,
                         solver_note=solver_note,
                         step_delta_deg=step_delta_deg,
                         velocity_delta_deg_s=velocity_delta_deg_s,
                         allowed_step_deg=allowed_step_deg,
                         joint_ramped=False,
                         candidate_q_deg=q_candidate,
-                        sent_q_deg=None,
                     )
 
                 if self._config.joint_limit_mode == "ramp":
@@ -511,47 +538,115 @@ class RobotCommandAdapter:
                 else:
                     raise ValueError(f"Unsupported joint_limit_mode={self._config.joint_limit_mode!r}")
 
+        return _PreparedSideCommand(
+            send_planned=True,
+            pre_reason="ready_to_send",
+            q_to_send=q_to_send,
+            q_display_deg=q_to_send,
+            solver_note=solver_note,
+            step_delta_deg=step_delta_deg,
+            velocity_delta_deg_s=velocity_delta_deg_s,
+            allowed_step_deg=allowed_step_deg,
+            joint_ramped=joint_ramped,
+            candidate_q_deg=q_candidate,
+        )
+
+    def _finalize_side_result(
+        self,
+        *,
+        prepared: _PreparedSideCommand,
+        dry_run: bool,
+        packet_sent: bool,
+    ) -> _SideProcessResult:
+        if not prepared.send_planned:
+            return _new_side_result(
+                sent=False,
+                reason=prepared.pre_reason,
+                q_deg=prepared.q_display_deg,
+                solver_note=prepared.solver_note,
+                step_delta_deg=prepared.step_delta_deg,
+                velocity_delta_deg_s=prepared.velocity_delta_deg_s,
+                allowed_step_deg=prepared.allowed_step_deg,
+                joint_ramped=prepared.joint_ramped,
+                candidate_q_deg=prepared.candidate_q_deg,
+                sent_q_deg=None,
+            )
+
+        if prepared.q_to_send is None:
+            return _new_side_result(
+                sent=False,
+                reason="send_failed",
+                q_deg=None,
+                solver_note=prepared.solver_note,
+                step_delta_deg=prepared.step_delta_deg,
+                velocity_delta_deg_s=prepared.velocity_delta_deg_s,
+                allowed_step_deg=prepared.allowed_step_deg,
+                joint_ramped=prepared.joint_ramped,
+                candidate_q_deg=prepared.candidate_q_deg,
+                sent_q_deg=None,
+            )
+
         if dry_run:
             return _new_side_result(
                 sent=False,
                 reason="dry_run",
-                q_deg=q_to_send,
-                solver_note=solver_note,
-                step_delta_deg=step_delta_deg,
-                velocity_delta_deg_s=velocity_delta_deg_s,
-                allowed_step_deg=allowed_step_deg,
-                joint_ramped=joint_ramped,
-                candidate_q_deg=q_candidate,
-                sent_q_deg=q_to_send,
+                q_deg=prepared.q_to_send,
+                solver_note=prepared.solver_note,
+                step_delta_deg=prepared.step_delta_deg,
+                velocity_delta_deg_s=prepared.velocity_delta_deg_s,
+                allowed_step_deg=prepared.allowed_step_deg,
+                joint_ramped=prepared.joint_ramped,
+                candidate_q_deg=prepared.candidate_q_deg,
+                sent_q_deg=prepared.q_to_send,
             )
 
-        try:
-            send_joint_command(robot=robot, arm=arm, joints_deg=q_to_send)
+        if packet_sent:
             return _new_side_result(
                 sent=True,
                 reason="sent",
-                q_deg=q_to_send,
-                solver_note=solver_note,
-                step_delta_deg=step_delta_deg,
-                velocity_delta_deg_s=velocity_delta_deg_s,
-                allowed_step_deg=allowed_step_deg,
-                joint_ramped=joint_ramped,
-                candidate_q_deg=q_candidate,
-                sent_q_deg=q_to_send,
+                q_deg=prepared.q_to_send,
+                solver_note=prepared.solver_note,
+                step_delta_deg=prepared.step_delta_deg,
+                velocity_delta_deg_s=prepared.velocity_delta_deg_s,
+                allowed_step_deg=prepared.allowed_step_deg,
+                joint_ramped=prepared.joint_ramped,
+                candidate_q_deg=prepared.candidate_q_deg,
+                sent_q_deg=prepared.q_to_send,
             )
+
+        return _new_side_result(
+            sent=False,
+            reason="send_failed",
+            q_deg=prepared.q_to_send,
+            solver_note=prepared.solver_note,
+            step_delta_deg=prepared.step_delta_deg,
+            velocity_delta_deg_s=prepared.velocity_delta_deg_s,
+            allowed_step_deg=prepared.allowed_step_deg,
+            joint_ramped=prepared.joint_ramped,
+            candidate_q_deg=prepared.candidate_q_deg,
+            sent_q_deg=None,
+        )
+
+    def _send_prepared_commands(
+        self,
+        *,
+        robot: Any,
+        commands: list[tuple[str, tuple[float, float, float, float, float, float, float]]],
+    ) -> bool:
+        if not commands:
+            return False
+
+        try:
+            if not bool(robot.clear_set()):
+                return False
+
+            for arm, q_deg in commands:
+                if not bool(robot.set_joint_cmd_pose(arm=arm, joints=list(q_deg))):
+                    return False
+
+            return bool(robot.send_cmd())
         except Exception:
-            return _new_side_result(
-                sent=False,
-                reason="send_failed",
-                q_deg=q_to_send,
-                solver_note=solver_note,
-                step_delta_deg=step_delta_deg,
-                velocity_delta_deg_s=velocity_delta_deg_s,
-                allowed_step_deg=allowed_step_deg,
-                joint_ramped=joint_ramped,
-                candidate_q_deg=q_candidate,
-                sent_q_deg=None,
-            )
+            return False
 
     def pause(self) -> None:
         self.disable_commands()

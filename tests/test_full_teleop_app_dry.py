@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import time
 
 from teleop.app import FullTeleopApp, FullTeleopAppConfig
 from teleop.core.pose import Pose7
@@ -10,6 +11,7 @@ from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
 from teleop.filtering import OrientationFilterConfig
 from teleop.transform.coordinate_transform import PositionOrientationCoordinateTransformer
 from teleop.transform.orientation_transform import OrientationTrackingConfig
+from teleop.app.full_teleop_app import sleep_until
 
 
 def _pose(x: float, y: float, z: float) -> Pose7:
@@ -294,6 +296,21 @@ def test_run_full_teleop_script_importable_without_side_effects() -> None:
 
     assert hasattr(module, "parse_args")
     assert hasattr(module, "main")
+
+
+def test_sleep_until_returns_immediately_when_deadline_passed() -> None:
+    start = time.perf_counter()
+    sleep_until(start - 0.001, spin_threshold_s=0.0005)
+    assert (time.perf_counter() - start) < 0.01
+
+
+def test_sleep_until_waits_until_future_deadline() -> None:
+    start = time.perf_counter()
+    sleep_until(start + 0.002, spin_threshold_s=0.0002)
+    elapsed = time.perf_counter() - start
+
+    assert elapsed >= 0.001
+    assert elapsed < 0.05
 
 
 def test_calibration_triggers_orientation_filter_reset_hook() -> None:

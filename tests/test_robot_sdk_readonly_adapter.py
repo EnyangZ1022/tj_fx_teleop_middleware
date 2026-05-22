@@ -106,6 +106,33 @@ class _FakeRobotNoFrames(_FakeRobotBase):
         }
 
 
+class _FakeRobotDistinctPerSubscribe(_FakeRobotBase):
+    def subscribe(self, dcss):
+        _ = dcss
+        self._sub_counter += 1
+        serial = float(self._sub_counter)
+        return {
+            "outputs": [
+                {
+                    "frame_serial": int(serial),
+                    "fb_joint_pos": [serial, serial + 1.0, serial + 2.0, serial + 3.0, serial + 4.0, serial + 5.0, serial + 6.0],
+                },
+                {
+                    "frame_serial": int(serial),
+                    "fb_joint_pos": [
+                        serial + 100.0,
+                        serial + 101.0,
+                        serial + 102.0,
+                        serial + 103.0,
+                        serial + 104.0,
+                        serial + 105.0,
+                        serial + 106.0,
+                    ],
+                },
+            ]
+        }
+
+
 class _FakeMarvinKine:
     def __init__(self):
         self.load_calls: list[tuple[int, str]] = []
@@ -309,6 +336,28 @@ def test_get_dual_arm_feedback_returns_both_sides(monkeypatch) -> None:
     assert isinstance(dual_feedback, DualArmRobotFeedback)
     assert dual_feedback.left is not None
     assert dual_feedback.right is not None
+
+
+def test_get_dual_arm_feedback_uses_single_subscribe_call(monkeypatch) -> None:
+    _install_fake_fx_robot(monkeypatch, _FakeRobotDistinctPerSubscribe)
+    _install_fake_fx_kine(monkeypatch)
+
+    adapter = RobotSDKReadOnlyAdapter(
+        RobotSDKConfig(connect_check_samples=3, connect_check_interval_s=0.0, connect_settle_s=0.0)
+    )
+    adapter.connect()
+    assert adapter.robot is not None
+    assert adapter.left_kine is not None
+    assert adapter.right_kine is not None
+
+    before_subscribe = adapter.robot._sub_counter
+
+    _ = adapter.get_dual_arm_feedback()
+
+    assert adapter.robot._sub_counter == before_subscribe + 1
+    left_q = adapter.left_kine._kine.fk_calls[-1]
+    right_q = adapter.right_kine._kine.fk_calls[-1]
+    assert float(right_q[0]) - float(left_q[0]) == pytest.approx(100.0)
 
 
 def test_no_motion_methods_are_called_in_stage6a(monkeypatch) -> None:

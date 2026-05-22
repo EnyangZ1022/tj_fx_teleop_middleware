@@ -79,6 +79,12 @@ def test_default_app_config_safe_defaults() -> None:
     assert cfg.orientation_filter.enabled is False
     assert cfg.orientation_filter.tau_s == 0.02
     assert cfg.orientation_filter.fallback_dt_s == 0.01
+    assert cfg.spin_threshold_s == 0.0005
+
+
+def test_negative_spin_threshold_raises() -> None:
+    with pytest.raises(ValueError):
+        FullTeleopAppConfig(spin_threshold_s=-0.0001)
 
 
 def test_position_orientation_mode_enables_orientation_tracking() -> None:

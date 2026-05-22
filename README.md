@@ -269,7 +269,11 @@ python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --ena
 Rate control:
 
 ```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --rate-hz 50
+# Preferred (stable machine): 100 Hz command loop
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --rate-hz 100 --spin-threshold-ms 0.5
+
+# Fallback (if 100 Hz is unstable): 50 Hz command loop
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --rate-hz 50 --spin-threshold-ms 0.5
 ```
 
 Notes:
@@ -277,6 +281,28 @@ Notes:
 - PICO input may be around 80-95 Hz depending on setup.
 - Command loop is fixed-rate and should typically run at 100 Hz or 50 Hz.
 - Use 50 Hz if 100 Hz is unstable on your system.
+- `--spin-threshold-ms` controls the short busy-spin window near each loop deadline (default `0.5`).
+- Set `--spin-threshold-ms 0` to disable spin and use pure `time.sleep` behavior.
+- Dual-arm feedback reads both sides from one SDK `subscribe` call per loop.
+- Dual-arm command send batches into one SDK packet (`clear_set` -> `set_joint_cmd_pose` x N -> `send_cmd`).
+
+### Optional Windows high-resolution timer
+
+On Windows, command loop timing can be affected by system timer granularity.
+For real robot tests, you can optionally enable a high-resolution timer:
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --joint-limit-mode ramp --max-joint-step-deg 1.6 --max-joint-velocity-deg-s 190 --enable-win-high-res-timer --win-high-res-timer-ms 1
+```
+
+Notes:
+
+- this feature is optional and disabled by default
+- it uses Windows `timeBeginPeriod` / `timeEndPeriod` through Python `ctypes`
+- it is a no-op on Linux/macOS
+- Linux users do not need this option
+- it may improve `time.sleep` / scheduler precision on Windows
+- it does not replace safety limits or command-loop diagnostics
 
 ## 8. How to operate teleoperation
 

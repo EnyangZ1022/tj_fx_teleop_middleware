@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+from contextlib import contextmanager
 from pathlib import Path
+import platform
 import sys
 import threading
 
@@ -19,6 +22,58 @@ from teleop.robot import RobotCommandConfig
 from teleop.transform.orientation_transform import OrientationTrackingConfig
 from teleop.ui.snapshot import LatestSnapshotStore
 from teleop.ui.ui_config import UIConfig
+
+
+@contextmanager
+def _windows_high_res_timer(enable: bool, period_ms: int):
+    """Temporarily request a high-resolution Windows timer.
+
+    On non-Windows platforms, this is a no-op.
+    """
+    if not enable:
+        yield
+        return
+
+    if platform.system() != "Windows":
+        print("Windows high-resolution timer requested on non-Windows platform; no-op.")
+        yield
+        return
+
+    try:
+        if int(period_ms) <= 0:
+            raise ValueError("period_ms must be positive")
+
+        winmm = ctypes.WinDLL("winmm")
+        begin = winmm.timeBeginPeriod
+        end = winmm.timeEndPeriod
+
+        begin.argtypes = [ctypes.c_uint]
+        begin.restype = ctypes.c_uint
+        end.argtypes = [ctypes.c_uint]
+        end.restype = ctypes.c_uint
+
+        result = begin(int(period_ms))
+        if result != 0:
+            print(
+                f"Warning: timeBeginPeriod({period_ms}) failed with code {result}; "
+                "continuing without high-resolution timer."
+            )
+            yield
+            return
+
+        print(f"Windows high-resolution timer enabled: {period_ms} ms")
+        try:
+            yield
+        finally:
+            end_result = end(int(period_ms))
+            if end_result != 0:
+                print(f"Warning: timeEndPeriod({period_ms}) failed with code {end_result}")
+            else:
+                print("Windows high-resolution timer restored.")
+
+    except Exception as exc:
+        print(f"Warning: high-resolution timer setup failed: {exc}")
+        yield
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -99,6 +154,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Override max joint velocity limit in deg/s (keeps config default when omitted)",
     )
+    parser.add_argument(
+        "--enable-win-high-res-timer",
+        action="store_true",
+        help=(
+            "Enable Windows high-resolution timer using timeBeginPeriod. "
+            "No-op on non-Windows platforms."
+        ),
+    )
+    parser.add_argument(
+        "--win-high-res-timer-ms",
+        type=int,
+        default=1,
+        help="Requested Windows timer period in milliseconds. Default: 1.",
+    )
+    parser.add_argument(
+        "--spin-threshold-ms",
+        type=float,
+        default=0.5,
+        help=(
+            "Final busy-spin window in milliseconds near scheduler deadline. "
+            "Set 0 to disable spin and use pure sleep."
+        ),
+    )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
     parser.add_argument("--max-runtime-s", type=float, default=None, help="Optional runtime cap in seconds")
@@ -107,7 +185,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Required alongside --enable-send to unlock interactive YES confirmation",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if int(args.win_high_res_timer_ms) <= 0:
+        parser.error("--win-high-res-timer-ms must be positive")
+    if float(args.spin_threshold_ms) < 0.0:
+        parser.error("--spin-threshold-ms must be >= 0")
+    return args
 
 
 def _confirm_real_send(args: argparse.Namespace) -> bool:
@@ -166,6 +249,7 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         dry_run=dry_run,
         require_confirmation=True,
         command_rate_hz=float(args.rate_hz),
+        spin_threshold_s=float(args.spin_threshold_ms) / 1000.0,
         ui_enabled=bool(args.ui),
         logging_enabled=bool(args.logging),
         teleop_mode=teleop_mode,
@@ -226,6 +310,12 @@ def _validate_runtime_args(args: argparse.Namespace) -> str | None:
 def main() -> int:
     args = parse_args()
 
+    if int(args.win_high_res_timer_ms) > 15:
+        print(
+            "Warning: --win-high-res-timer-ms is greater than 15 ms; "
+            "this may not improve timing precision."
+        )
+
     validation_error = _validate_runtime_args(args)
     if validation_error is not None:
         print(validation_error)
@@ -236,80 +326,87 @@ def main() -> int:
             print("Confirmation failed or canceled. Exiting without send.")
             return 1
 
-    app_config = _build_app_config(args)
-    robot_command_config = _build_robot_command_config(args)
+    with _windows_high_res_timer(
+        enable=bool(args.enable_win_high_res_timer),
+        period_ms=int(args.win_high_res_timer_ms),
+    ):
+        app_config = _build_app_config(args)
+        robot_command_config = _build_robot_command_config(args)
 
-    print(f"Control mode: {app_config.control_mode}")
-    print(f"Teleop mode: {app_config.teleop_mode}")
-    print(f"joint_limit_mode: {robot_command_config.joint_limit_mode}")
-    print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
-    print(f"max_joint_velocity_deg_s: {float(robot_command_config.max_joint_velocity_deg_s):.3f}")
-    if app_config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:
-        print(f"Orientation filter: {'enabled' if bool(app_config.orientation_filter.enabled) else 'disabled'}")
-        print(f"orientation_filter_tau_s: {float(app_config.orientation_filter.tau_s):.5f}")
-        print(f"orientation_filter_fallback_dt_s: {float(app_config.orientation_filter.fallback_dt_s):.5f}")
-        print(f"reset_on_calibration: {bool(app_config.orientation_filter.reset_on_calibration)}")
-    if bool(app_config.orientation_tracking.enabled):
-        print("Orientation tracking: enabled")
-        print(f"  orientation_algorithm={app_config.orientation_tracking.orientation_algorithm}")
-        print(f"  use_calibration_offset={bool(app_config.orientation_tracking.use_calibration_offset)}")
-        print(f"  rotation_scale={float(app_config.orientation_tracking.rotation_scale):.3f}")
-        print(f"  max_total_angle_deg={float(app_config.orientation_tracking.max_total_angle_deg):.2f}")
-        print(f"  max_step_angle_deg={float(app_config.orientation_tracking.max_step_angle_deg):.2f}")
-        print(f"  relative_mode={app_config.orientation_tracking.relative_mode}")
-    else:
-        print("Orientation tracking: disabled")
+        print(f"Control mode: {app_config.control_mode}")
+        print(f"Teleop mode: {app_config.teleop_mode}")
+        print(f"joint_limit_mode: {robot_command_config.joint_limit_mode}")
+        print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
+        print(f"max_joint_velocity_deg_s: {float(robot_command_config.max_joint_velocity_deg_s):.3f}")
+        print(f"spin_threshold_ms: {float(args.spin_threshold_ms):.3f}")
+        print(f"win_high_res_timer: {'enabled' if bool(args.enable_win_high_res_timer) else 'disabled'}")
+        print(f"win_high_res_timer_ms: {int(args.win_high_res_timer_ms)}")
+        if app_config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:
+            print(f"Orientation filter: {'enabled' if bool(app_config.orientation_filter.enabled) else 'disabled'}")
+            print(f"orientation_filter_tau_s: {float(app_config.orientation_filter.tau_s):.5f}")
+            print(f"orientation_filter_fallback_dt_s: {float(app_config.orientation_filter.fallback_dt_s):.5f}")
+            print(f"reset_on_calibration: {bool(app_config.orientation_filter.reset_on_calibration)}")
+        if bool(app_config.orientation_tracking.enabled):
+            print("Orientation tracking: enabled")
+            print(f"  orientation_algorithm={app_config.orientation_tracking.orientation_algorithm}")
+            print(f"  use_calibration_offset={bool(app_config.orientation_tracking.use_calibration_offset)}")
+            print(f"  rotation_scale={float(app_config.orientation_tracking.rotation_scale):.3f}")
+            print(f"  max_total_angle_deg={float(app_config.orientation_tracking.max_total_angle_deg):.2f}")
+            print(f"  max_step_angle_deg={float(app_config.orientation_tracking.max_step_angle_deg):.2f}")
+            print(f"  relative_mode={app_config.orientation_tracking.relative_mode}")
+        else:
+            print("Orientation tracking: disabled")
 
-    ui_config = UIConfig(
-        enabled=bool(args.ui),
-        update_hz=20.0,
-        window_title="TJ-FX Teleop Diagnostic UI",
-    )
-    logging_config = LoggingConfig(enabled=bool(args.logging))
-    if bool(args.logging):
-        logging_config = LoggingConfig(
-            enabled=True,
-            record_events=True,
-            record_frames=True,
-            record_performance=True,
-            frame_sample_hz=float(args.rate_hz),
-            performance_sample_hz=min(float(args.rate_hz), 50.0),
+        ui_config = UIConfig(
+            enabled=bool(args.ui),
+            update_hz=20.0,
+            window_title="TJ-FX Teleop Diagnostic UI",
+        )
+        logging_config = LoggingConfig(enabled=bool(args.logging))
+        if bool(args.logging):
+            logging_config = LoggingConfig(
+                enabled=True,
+                record_events=True,
+                record_frames=True,
+                record_performance=True,
+                frame_sample_hz=float(args.rate_hz),
+                performance_sample_hz=min(float(args.rate_hz), 50.0),
+            )
+
+        snapshot_store = LatestSnapshotStore() if bool(args.ui) else None
+
+        app = FullTeleopApp(
+            config=app_config,
+            robot_command_config=robot_command_config,
+            logging_config=logging_config,
+            ui_config=ui_config,
+            snapshot_store=snapshot_store,
         )
 
-    snapshot_store = LatestSnapshotStore() if bool(args.ui) else None
+        if bool(args.ui):
+            from teleop.ui.app import run_ui
 
-    app = FullTeleopApp(
-        config=app_config,
-        robot_command_config=robot_command_config,
-        logging_config=logging_config,
-        ui_config=ui_config,
-        snapshot_store=snapshot_store,
-    )
+            app.initialize()
+            thread = threading.Thread(target=app.run, name="full-teleop-loop", daemon=True)
+            thread.start()
 
-    if bool(args.ui):
-        from teleop.ui.app import run_ui
-
-        app.initialize()
-        thread = threading.Thread(target=app.run, name="full-teleop-loop", daemon=True)
-        thread.start()
+            try:
+                return run_ui(
+                    snapshot_store=app.snapshot_store if app.snapshot_store is not None else LatestSnapshotStore(),
+                    config=ui_config,
+                )
+            finally:
+                app.request_stop()
+                app.shutdown()
+                thread.join(timeout=2.0)
 
         try:
-            return run_ui(
-                snapshot_store=app.snapshot_store if app.snapshot_store is not None else LatestSnapshotStore(),
-                config=ui_config,
-            )
-        finally:
+            app.run()
+            return 0
+        except KeyboardInterrupt:
             app.request_stop()
             app.shutdown()
-            thread.join(timeout=2.0)
-
-    try:
-        app.run()
-        return 0
-    except KeyboardInterrupt:
-        app.request_stop()
-        app.shutdown()
-        return 0
+            return 0
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ class FullTeleopAppConfig:
     dry_run: bool = True
     require_confirmation: bool = True
     command_rate_hz: float = 100.0
+    spin_threshold_s: float = 0.0005
     ui_enabled: bool = False
     logging_enabled: bool = False
     teleop_mode: str = TeleopMode.POSITION_ONLY.value
@@ -72,6 +73,8 @@ class FullTeleopAppConfig:
             raise ValueError("robot_ip must not be empty")
         if float(self.command_rate_hz) <= 0.0:
             raise ValueError("command_rate_hz must be positive")
+        if float(self.spin_threshold_s) < 0.0:
+            raise ValueError("spin_threshold_s must be >= 0")
         if self.max_runtime_s is not None and float(self.max_runtime_s) <= 0.0:
             raise ValueError("max_runtime_s must be positive when provided")
         if float(self.startup_wait_s) < 0.0:

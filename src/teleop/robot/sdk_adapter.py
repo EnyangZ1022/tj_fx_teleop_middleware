@@ -4,6 +4,7 @@ import importlib
 from pathlib import Path
 import sys
 import time
+from typing import Any
 
 from teleop.core.robot_frame import DualArmRobotFeedback, RobotArmFeedback
 from teleop.robot.kinematics_adapter import ArmKinematicsAdapter, sdk_arm_to_index
@@ -141,37 +142,52 @@ class RobotSDKReadOnlyAdapter:
             )
 
     def get_joint_feedback(self, side: str) -> tuple[float, float, float, float, float, float, float]:
-        if not self.connected or self.robot is None or self.dcss is None:
-            raise RuntimeError("Robot adapter is not connected")
-
         side_norm = side.strip().lower()
         if side_norm not in {"left", "right"}:
             raise ValueError("side must be 'left' or 'right'")
 
-        arm = self._config.left_arm if side_norm == "left" else self._config.right_arm
-        idx = sdk_arm_to_index(arm)
+        outputs = self._subscribe_outputs()
+        return self._extract_joint_feedback_from_outputs(outputs, side_norm)
+
+    def _subscribe_outputs(self) -> list[Any]:
+        if not self.connected or self.robot is None or self.dcss is None:
+            raise RuntimeError("Robot adapter is not connected")
 
         sub_data = self.robot.subscribe(self.dcss)
         if not isinstance(sub_data, dict):
             raise RuntimeError("Failed to subscribe robot feedback")
 
         outputs = sub_data.get("outputs")
-        if not isinstance(outputs, list) or len(outputs) <= idx:
+        if not isinstance(outputs, list):
+            raise RuntimeError("Missing outputs in subscribed robot feedback")
+        return outputs
+
+    def _extract_joint_feedback_from_outputs(
+        self,
+        outputs: list[Any],
+        side_norm: str,
+    ) -> tuple[float, float, float, float, float, float, float]:
+        arm = self._config.left_arm if side_norm == "left" else self._config.right_arm
+        idx = sdk_arm_to_index(arm)
+
+        if len(outputs) <= idx:
             raise RuntimeError(f"Missing outputs for side={side_norm}")
 
-        q = outputs[idx].get("fb_joint_pos")
+        side_output = outputs[idx]
+        if not isinstance(side_output, dict):
+            raise RuntimeError(f"Invalid output payload for side={side_norm}")
+
+        q = side_output.get("fb_joint_pos")
         if not isinstance(q, list) or len(q) != 7:
             raise RuntimeError(f"Invalid joint feedback for side={side_norm}")
 
         return tuple(float(v) for v in q)
 
-    def get_arm_feedback(self, side: str) -> RobotArmFeedback:
-        side_norm = side.strip().lower()
-        if side_norm not in {"left", "right"}:
-            raise ValueError("side must be 'left' or 'right'")
-
-        q_deg = self.get_joint_feedback(side_norm)
-
+    def _arm_feedback_from_joint_q(
+        self,
+        side_norm: str,
+        q_deg: tuple[float, float, float, float, float, float, float],
+    ) -> RobotArmFeedback:
         if side_norm == "left":
             if self.left_kine is None or not self.left_kine.is_initialized:
                 raise RuntimeError("Left arm kinematics is not initialized")
@@ -187,10 +203,22 @@ class RobotSDKReadOnlyAdapter:
             valid=True,
         )
 
+    def get_arm_feedback(self, side: str) -> RobotArmFeedback:
+        side_norm = side.strip().lower()
+        if side_norm not in {"left", "right"}:
+            raise ValueError("side must be 'left' or 'right'")
+
+        q_deg = self.get_joint_feedback(side_norm)
+        return self._arm_feedback_from_joint_q(side_norm, q_deg)
+
     def get_dual_arm_feedback(self) -> DualArmRobotFeedback:
         # Stage 6A policy: if one side fails, raise RuntimeError rather than returning partial data.
-        left = self.get_arm_feedback("left")
-        right = self.get_arm_feedback("right")
+        outputs = self._subscribe_outputs()
+        left_q = self._extract_joint_feedback_from_outputs(outputs, "left")
+        right_q = self._extract_joint_feedback_from_outputs(outputs, "right")
+
+        left = self._arm_feedback_from_joint_q("left", left_q)
+        right = self._arm_feedback_from_joint_q("right", right_q)
         return DualArmRobotFeedback(left=left, right=right)
 
 

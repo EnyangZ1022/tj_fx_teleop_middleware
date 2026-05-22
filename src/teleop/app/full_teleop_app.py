@@ -33,6 +33,23 @@ from teleop.ui.snapshot_builder import build_visualization_snapshot
 from teleop.ui.ui_config import UIConfig
 
 
+def sleep_until(deadline_s: float, spin_threshold_s: float = 0.0005) -> None:
+    """Sleep until a deadline with a short spin window to reduce wake-up jitter."""
+    spin_threshold = max(0.0, float(spin_threshold_s))
+
+    while True:
+        remaining_s = float(deadline_s) - time.perf_counter()
+        if remaining_s <= 0.0:
+            return
+
+        if remaining_s > spin_threshold:
+            time.sleep(max(0.0, remaining_s - spin_threshold))
+            continue
+
+        # Busy spin only inside a small window near the deadline.
+        continue
+
+
 class FullTeleopApp:
     """Full teleoperation orchestration app for Stage 9 integration.
 
@@ -219,6 +236,7 @@ class FullTeleopApp:
                     "connect_robot": bool(self.config.connect_robot),
                     "dry_run": bool(self.config.dry_run),
                     "enable_send": bool(self.config.enable_send),
+                    "spin_threshold_s": float(self.config.spin_threshold_s),
                     "ui_enabled": bool(self.ui_config.enabled),
                     "logging_enabled": bool(self.logging_config.enabled),
                     "teleop_mode": str(self.config.teleop_mode),
@@ -261,11 +279,12 @@ class FullTeleopApp:
                         break
 
                 next_tick += period_s
-                sleep_s = next_tick - time.perf_counter()
-                if sleep_s > 0.0:
-                    time.sleep(sleep_s)
+                now_s = time.perf_counter()
+                if next_tick > now_s:
+                    sleep_until(next_tick, spin_threshold_s=float(self.config.spin_threshold_s))
                 else:
-                    next_tick = time.perf_counter()
+                    # Overrun: resync to current time to avoid drift accumulation.
+                    next_tick = now_s
         finally:
             self.shutdown()
 
@@ -694,4 +713,4 @@ class FullTeleopApp:
         self.snapshot_store.set(snapshot)
 
 
-__all__ = ["FullTeleopApp", "SafetyState"]
+__all__ = ["FullTeleopApp", "SafetyState", "sleep_until"]
