@@ -53,27 +53,31 @@ def _windows_high_res_timer(enable: bool, period_ms: int):
         end.restype = ctypes.c_uint
 
         result = begin(int(period_ms))
-        if result != 0:
-            print(
-                f"Warning: timeBeginPeriod({period_ms}) failed with code {result}; "
-                "continuing without high-resolution timer."
-            )
-            yield
-            return
+    except Exception as exc:
+        print(f"Warning: high-resolution timer setup failed: {exc}")
+        yield
+        return
 
-        print(f"Windows high-resolution timer enabled: {period_ms} ms")
+    if result != 0:
+        print(
+            f"Warning: timeBeginPeriod({period_ms}) failed with code {result}; "
+            "continuing without high-resolution timer."
+        )
+        yield
+        return
+
+    print(f"Windows high-resolution timer enabled: {period_ms} ms")
+    try:
+        yield
+    finally:
         try:
-            yield
-        finally:
             end_result = end(int(period_ms))
             if end_result != 0:
                 print(f"Warning: timeEndPeriod({period_ms}) failed with code {end_result}")
             else:
                 print("Windows high-resolution timer restored.")
-
-    except Exception as exc:
-        print(f"Warning: high-resolution timer setup failed: {exc}")
-        yield
+        except Exception as exc:
+            print(f"Warning: timeEndPeriod({period_ms}) raised exception: {exc}")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

@@ -3,6 +3,7 @@ import ctypes
 import inspect
 import os
 import re
+import sys
 import time
 from ctypes import *
 from textwrap import dedent
@@ -11,16 +12,81 @@ from typing import Union
 current_file_path = os.path.abspath(__file__)
 current_path = os.path.dirname(current_file_path)
 
-'''######################################## Original SDK ########################################################'''
+_WINDOWS_RUNTIME_DLLS = ("libstdc++-6.dll", "libgcc_s_seh-1.dll")
+
+
+def _collect_windows_dll_search_dirs(runtime_dll_names: tuple[str, ...]) -> list[str]:
+    """Collect DLL search directories for Windows SDK runtime dependencies."""
+    dirs: list[str] = []
+    seen: set[str] = set()
+
+    def _add_dir(path: str) -> None:
+        if not path:
+            return
+        normalized = os.path.normcase(os.path.normpath(path))
+        if normalized in seen:
+            return
+        if os.path.isdir(path):
+            seen.add(normalized)
+            dirs.append(path)
+
+    # Always include the SDK directory itself.
+    _add_dir(current_path)
+
+    # Optional explicit override for lab-specific deployments.
+    extra_dirs = os.environ.get("MARVIN_SDK_DLL_DIRS", "")
+    for raw in extra_dirs.split(os.pathsep):
+        path = raw.strip().strip('"')
+        if path:
+            _add_dir(path)
+
+    # Include PATH entries that actually contain required runtime DLLs.
+    for raw in os.environ.get("PATH", "").split(os.pathsep):
+        path = raw.strip().strip('"')
+        if not path or not os.path.isdir(path):
+            continue
+        for dll_name in runtime_dll_names:
+            if os.path.isfile(os.path.join(path, dll_name)):
+                _add_dir(path)
+                break
+
+    return dirs
+
+
+def _load_marvin_sdk_library() -> tuple[ctypes.WinDLL | ctypes.CDLL, list[object]]:
+    """Load Marvin SDK with explicit DLL search paths on Windows."""
+    if sys.platform != "win32":
+        return ctypes.CDLL(os.path.join(current_path, "libMarvinSDK.so")), []
+
+    sdk_path = os.path.join(current_path, "libMarvinSDK.dll")
+    search_dirs = _collect_windows_dll_search_dirs(_WINDOWS_RUNTIME_DLLS)
+    dll_dir_handles: list[object] = []
+
+    if hasattr(os, "add_dll_directory"):
+        for dll_dir in search_dirs:
+            try:
+                dll_dir_handles.append(os.add_dll_directory(dll_dir))
+            except OSError:
+                # Ignore invalid entries and continue with the remaining candidates.
+                continue
+
+    try:
+        return ctypes.WinDLL(sdk_path), dll_dir_handles
+    except FileNotFoundError as exc:
+        runtime_names = ", ".join(_WINDOWS_RUNTIME_DLLS)
+        raise FileNotFoundError(
+            f"Could not load '{sdk_path}'. The file exists, but one of its dependent DLLs is missing. "
+            f"Expected runtime DLLs include: {runtime_names}. "
+            f"Set MARVIN_SDK_DLL_DIRS or PATH so those DLLs are discoverable. "
+            f"Searched directories: {search_dirs}"
+        ) from exc
+
+'''###Add some dll connection above ↑， orginal sdk dll below↓ '''
 class Marvin_Robot:
     def __init__(self):
         """初始化机器人控制类"""
-        import sys
         print(f'user platform: {sys.platform}')
-        if sys.platform=='win32':
-            self.robot = ctypes.WinDLL(os.path.join(current_path,'libMarvinSDK.dll'))
-        else:
-            self.robot = ctypes.CDLL(os.path.join(current_path,'libMarvinSDK.so'))
+        self.robot, self._dll_dir_handles = _load_marvin_sdk_library()
         self.ErrorCode = None
         self.a_pvt_path=None
         self.b_pvt_path = None
@@ -1035,12 +1101,8 @@ class Marvin_Robot:
 class Concise_Marvin_Robot:
     def __init__(self):
         """初始化机器人控制类"""
-        import sys
         print(f'user platform: {sys.platform}')
-        if sys.platform=='win32':
-            self.robot = ctypes.WinDLL(os.path.join(current_path,'libMarvinSDK.dll'))
-        else:
-            self.robot = ctypes.CDLL(os.path.join(current_path,'libMarvinSDK.so'))
+        self.robot, self._dll_dir_handles = _load_marvin_sdk_library()
         self.ErrorCode = None
         self.a_pvt_path=None
         self.b_pvt_path = None

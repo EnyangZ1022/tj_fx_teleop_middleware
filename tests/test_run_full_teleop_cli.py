@@ -255,3 +255,32 @@ def test_windows_high_res_timer_context_noop_on_linux(monkeypatch) -> None:
 
     with module._windows_high_res_timer(enable=True, period_ms=1):
         pass
+
+
+def test_windows_high_res_timer_context_propagates_body_exception(monkeypatch) -> None:
+    module = _load_run_full_teleop_module()
+    monkeypatch.setattr(module.platform, "system", lambda: "Windows")
+
+    class _Callable:
+        def __init__(self, return_code: int):
+            self._return_code = return_code
+            self.calls: list[int] = []
+
+        def __call__(self, value: int) -> int:
+            self.calls.append(value)
+            return self._return_code
+
+    class _FakeWinMM:
+        def __init__(self):
+            self.timeBeginPeriod = _Callable(0)
+            self.timeEndPeriod = _Callable(0)
+
+    fake_winmm = _FakeWinMM()
+    monkeypatch.setattr(module.ctypes, "WinDLL", lambda _: fake_winmm)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        with module._windows_high_res_timer(enable=True, period_ms=1):
+            raise RuntimeError("boom")
+
+    assert fake_winmm.timeBeginPeriod.calls == [1]
+    assert fake_winmm.timeEndPeriod.calls == [1]
