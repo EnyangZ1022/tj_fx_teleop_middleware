@@ -17,6 +17,7 @@ class LoggingConfig:
     record_frames: bool = False
     record_performance: bool = False
     record_timing: bool = False
+    record_receiver_timing: bool = False
 
     frame_sample_hz: float = 10.0
     performance_sample_hz: float = 10.0

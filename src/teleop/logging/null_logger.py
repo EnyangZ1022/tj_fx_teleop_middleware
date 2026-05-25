@@ -29,6 +29,10 @@ class NullSessionLogger:
         _ = (event, payload, level)
         return
 
+    def log_receiver_timing(self, event: str, payload: dict | None = None, level: str = "DEBUG") -> None:
+        _ = (event, payload, level)
+        return
+
     def log_error(self, event: str, payload: dict | None = None) -> None:
         _ = (event, payload)
         return
@@ -44,6 +48,7 @@ class NullSessionLogger:
             frame_records=0,
             performance_records=0,
             timing_records=0,
+            receiver_timing_records=0,
             error_records=0,
             queue_size=0,
         )

@@ -292,7 +292,7 @@ def _build_logging_config(args: argparse.Namespace) -> LoggingConfig:
     mode = _resolve_logging_mode(args)
 
     if mode == "off":
-        return LoggingConfig(enabled=False, logging_mode="off")
+        return LoggingConfig(enabled=False, logging_mode="off", record_receiver_timing=False)
 
     if mode == "timing":
         return LoggingConfig(
@@ -302,6 +302,7 @@ def _build_logging_config(args: argparse.Namespace) -> LoggingConfig:
             record_frames=False,
             record_performance=False,
             record_timing=True,
+            record_receiver_timing=True,
             frame_sample_hz=float(args.rate_hz),
             performance_sample_hz=min(float(args.rate_hz), 50.0),
         )
@@ -313,6 +314,7 @@ def _build_logging_config(args: argparse.Namespace) -> LoggingConfig:
         record_frames=True,
         record_performance=True,
         record_timing=False,
+        record_receiver_timing=False,
         frame_sample_hz=float(args.rate_hz),
         performance_sample_hz=min(float(args.rate_hz), 50.0),
     )

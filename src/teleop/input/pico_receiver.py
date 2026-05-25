@@ -32,6 +32,7 @@ TAIL_SZ = TAIL_FMT.size
 
 OnFrameCallback = Callable[[PicoRawFrame], None]
 OnStateJsonCallback = Callable[[str, str], None]
+OnReceiverTimingCallback = Callable[[dict[str, object]], None]
 
 LOGGER = logging.getLogger(__name__)
 
@@ -318,10 +319,16 @@ def udp_broadcast_loop(stop_event: threading.Event) -> None:
 class PicoReceiver:
     """Receive and parse Pico frames, then deliver them by callback."""
 
-    def __init__(self, on_frame: OnFrameCallback | None = None):
+    def __init__(
+        self,
+        on_frame: OnFrameCallback | None = None,
+        on_receiver_timing: OnReceiverTimingCallback | None = None,
+    ):
         self._on_frame = on_frame
+        self._on_receiver_timing = on_receiver_timing
         self._latest_frame: PicoRawFrame | None = None
         self._frame_id = 0
+        self._receiver_seq = 0
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
@@ -371,21 +378,63 @@ class PicoReceiver:
             return self._latest_frame
 
     def _on_state_json(self, raw_json: str, dev_id: str) -> None:
+        pc_receive_perf_ns = time.perf_counter_ns()
+        pc_receive_wall_ns = time.time_ns()
+
+        json_size_bytes: int | None = None
+        try:
+            if isinstance(raw_json, str):
+                json_size_bytes = len(raw_json.encode("utf-8"))
+            elif isinstance(raw_json, (bytes, bytearray)):
+                json_size_bytes = len(raw_json)
+        except Exception:
+            json_size_bytes = None
+
         frame = parse_state_json(
             raw_json=raw_json,
             dev_id=dev_id,
             frame_id=0,
-            pc_receive_time_ns=time.time_ns(),
+            pc_receive_time_ns=pc_receive_wall_ns,
         )
-        if frame is None:
-            return
+        parse_done_perf_ns = time.perf_counter_ns()
 
         callback = None
+        receiver_timing_callback = None
+        receiver_seq = 0
+        frame_seq: int | None = None
+        pico_source_timestamp_ns: int | None = None
+
         with self._lock:
-            self._frame_id += 1
-            frame = replace(frame, frame_id=self._frame_id)
-            self._latest_frame = frame
+            self._receiver_seq += 1
+            receiver_seq = int(self._receiver_seq)
+
+            if frame is not None:
+                self._frame_id += 1
+                frame = replace(frame, frame_id=self._frame_id)
+                self._latest_frame = frame
+                frame_seq = int(frame.frame_id)
+                pico_source_timestamp_ns = int(frame.pico_timestamp_ns)
             callback = self._on_frame
+            receiver_timing_callback = self._on_receiver_timing
+
+        if receiver_timing_callback is not None:
+            try:
+                receiver_timing_callback(
+                    {
+                        "receiver_seq": receiver_seq,
+                        "pc_receive_perf_ns": int(pc_receive_perf_ns),
+                        "pc_receive_wall_ns": int(pc_receive_wall_ns),
+                        "pico_source_timestamp_ns": pico_source_timestamp_ns,
+                        "frame_seq": frame_seq,
+                        "parse_duration_ms": float(parse_done_perf_ns - pc_receive_perf_ns) / 1_000_000.0,
+                        "json_size_bytes": json_size_bytes,
+                    }
+                )
+            except Exception:
+                LOGGER.debug("PicoReceiver receiver timing callback failed", exc_info=True)
+
+        if frame is None:
+            return
 
         if callback is not None:
             try:

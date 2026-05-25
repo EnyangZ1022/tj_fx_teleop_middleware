@@ -53,6 +53,7 @@ def test_cli_legacy_logging_flag_maps_to_full_mode() -> None:
     assert logging_cfg.record_frames is True
     assert logging_cfg.record_performance is True
     assert logging_cfg.record_timing is False
+    assert logging_cfg.record_receiver_timing is False
 
 
 def test_cli_logging_mode_timing_builds_lightweight_logging_config() -> None:
@@ -67,6 +68,7 @@ def test_cli_logging_mode_timing_builds_lightweight_logging_config() -> None:
     assert logging_cfg.enabled is True
     assert logging_cfg.logging_mode == "timing"
     assert logging_cfg.record_timing is True
+    assert logging_cfg.record_receiver_timing is True
     assert logging_cfg.record_frames is False
     assert logging_cfg.record_performance is False
 

@@ -196,8 +196,9 @@ class FullTeleopApp:
 
         try:
             if self.config.connect_pico and self.teleop_provider is None:
+                receiver_timing_callback = self._on_receiver_timing_payload if self._is_timing_logging_mode() else None
                 self.teleop_provider = TeleopProvider(
-                    pico_provider=PicoProvider(),
+                    pico_provider=PicoProvider(on_receiver_timing=receiver_timing_callback),
                     mapper=self.pico_mapper,
                 )
 
@@ -528,6 +529,18 @@ class FullTeleopApp:
 
     def _is_timing_logging_mode(self) -> bool:
         return bool(self.logging_config.enabled) and str(self.logging_config.logging_mode) == "timing"
+
+    def _on_receiver_timing_payload(self, payload: dict[str, object]) -> None:
+        if not self._is_timing_logging_mode():
+            return
+
+        log_receiver_timing = getattr(self.logger, "log_receiver_timing", None)
+        if callable(log_receiver_timing):
+            log_receiver_timing("pico_receiver_timing", payload=payload)
+            return
+
+        # Fallback keeps diagnostics best-effort if custom loggers do not implement receiver timing.
+        self.logger.log_performance("pico_receiver_timing", payload=payload)
 
     def _log_full_step(
         self,

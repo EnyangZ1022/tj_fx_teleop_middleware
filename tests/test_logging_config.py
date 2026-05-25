@@ -9,3 +9,4 @@ def test_logging_config_defaults_are_safe() -> None:
     assert cfg.record_frames is False
     assert cfg.record_performance is False
     assert cfg.record_timing is False
+    assert cfg.record_receiver_timing is False

@@ -13,7 +13,7 @@ from teleop.logging.log_config import LoggingConfig
 from teleop.logging.log_schema import LogRecord, now_ns, to_jsonable
 
 
-_LOW_PRIORITY_RECORD_TYPES = {"frame", "performance", "timing"}
+_LOW_PRIORITY_RECORD_TYPES = {"frame", "performance", "timing", "receiver_timing"}
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class LoggingStats:
     frame_records: int
     performance_records: int
     timing_records: int
+    receiver_timing_records: int
     error_records: int
     queue_size: int
 
@@ -53,11 +54,14 @@ class AsyncSessionLogger:
         self._frame_records = 0
         self._performance_records = 0
         self._timing_records = 0
+        self._receiver_timing_records = 0
         self._error_records = 0
 
         self._session_dir: Path | None = None
         self._session_file: Path | None = None
+        self._receiver_timing_file: Path | None = None
         self._writer_handle: TextIO | None = None
+        self._receiver_timing_handle: TextIO | None = None
 
         self._stop_event = threading.Event()
         self._writer_thread: threading.Thread | None = None
@@ -73,6 +77,10 @@ class AsyncSessionLogger:
     def session_file(self) -> Path | None:
         return self._session_file
 
+    @property
+    def receiver_timing_file(self) -> Path | None:
+        return self._receiver_timing_file
+
     def is_enabled(self) -> bool:
         return self._enabled
 
@@ -85,6 +93,12 @@ class AsyncSessionLogger:
             self._session_dir.mkdir(parents=True, exist_ok=True)
 
             self._writer_handle = self._session_file.open("a", encoding="utf-8")
+            if bool(self._config.record_receiver_timing):
+                self._receiver_timing_file = self._session_dir / "teleop_receiver_timing.jsonl"
+                self._receiver_timing_handle = self._receiver_timing_file.open("a", encoding="utf-8")
+            else:
+                self._receiver_timing_file = None
+                self._receiver_timing_handle = None
             self._write_metadata_file()
 
             self._stop_event.clear()
@@ -173,6 +187,29 @@ class AsyncSessionLogger:
             # Logging must never throw into caller path.
             return
 
+    def log_receiver_timing(self, event: str, payload: dict | None = None, level: str = "DEBUG") -> None:
+        if not self._config.record_receiver_timing:
+            return
+
+        timestamp_ns = None
+        if isinstance(payload, dict):
+            ts_value = payload.get("pc_receive_wall_ns")
+            if isinstance(ts_value, int):
+                timestamp_ns = ts_value
+            elif isinstance(ts_value, str):
+                try:
+                    timestamp_ns = int(ts_value)
+                except ValueError:
+                    timestamp_ns = None
+
+        self._log(
+            record_type="receiver_timing",
+            event=event,
+            payload=payload,
+            level=level,
+            timestamp_ns=timestamp_ns,
+        )
+
     def log_error(self, event: str, payload: dict | None = None) -> None:
         self._log(record_type="error", event=event, payload=payload, level="ERROR")
 
@@ -189,6 +226,7 @@ class AsyncSessionLogger:
                 frame_records=self._frame_records,
                 performance_records=self._performance_records,
                 timing_records=self._timing_records,
+                receiver_timing_records=self._receiver_timing_records,
                 error_records=self._error_records,
                 queue_size=queue_size,
             )
@@ -202,6 +240,7 @@ class AsyncSessionLogger:
             self._frame_records = 0
             self._performance_records = 0
             self._timing_records = 0
+            self._receiver_timing_records = 0
             self._error_records = 0
 
     def _log(
@@ -280,6 +319,8 @@ class AsyncSessionLogger:
                 self._performance_records += 1
             elif record.record_type == "timing":
                 self._timing_records += 1
+            elif record.record_type == "receiver_timing":
+                self._receiver_timing_records += 1
             elif record.record_type == "error":
                 self._error_records += 1
 
@@ -331,13 +372,16 @@ class AsyncSessionLogger:
         return items
 
     def _write_batch(self, records: list[LogRecord]) -> None:
-        handle = self._writer_handle
-        if handle is None:
-            return
-
         written = 0
         for record in records:
             try:
+                handle = self._writer_handle
+                if record.record_type == "receiver_timing":
+                    handle = self._receiver_timing_handle
+                if handle is None:
+                    self._record_dropped()
+                    continue
+
                 line = json.dumps(to_jsonable(asdict(record)), ensure_ascii=False)
                 handle.write(line)
                 handle.write("\n")
@@ -349,17 +393,20 @@ class AsyncSessionLogger:
             self._record_written_count(written)
 
     def _safe_flush(self) -> None:
-        handle = self._writer_handle
-        if handle is None:
-            return
-        try:
-            handle.flush()
-        except Exception:
-            return
+        for handle in (self._writer_handle, self._receiver_timing_handle):
+            if handle is None:
+                continue
+            try:
+                handle.flush()
+            except Exception:
+                continue
 
     def _cleanup_writer_resources(self) -> None:
         handle = self._writer_handle
+        receiver_handle = self._receiver_timing_handle
         self._writer_handle = None
+        self._receiver_timing_handle = None
+        self._receiver_timing_file = None
         self._writer_thread = None
 
         if handle is not None:
@@ -369,6 +416,16 @@ class AsyncSessionLogger:
                 pass
             try:
                 handle.close()
+            except Exception:
+                pass
+
+        if receiver_handle is not None:
+            try:
+                receiver_handle.flush()
+            except Exception:
+                pass
+            try:
+                receiver_handle.close()
             except Exception:
                 pass
 
