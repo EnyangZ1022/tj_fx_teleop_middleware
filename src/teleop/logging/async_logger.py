@@ -7,13 +7,13 @@ import json
 from pathlib import Path
 import threading
 import time
-from typing import TextIO
+from typing import Callable, TextIO
 
 from teleop.logging.log_config import LoggingConfig
 from teleop.logging.log_schema import LogRecord, now_ns, to_jsonable
 
 
-_LOW_PRIORITY_RECORD_TYPES = {"frame", "performance"}
+_LOW_PRIORITY_RECORD_TYPES = {"frame", "performance", "timing"}
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,7 @@ class LoggingStats:
     event_records: int
     frame_records: int
     performance_records: int
+    timing_records: int
     error_records: int
     queue_size: int
 
@@ -51,6 +52,7 @@ class AsyncSessionLogger:
         self._event_records = 0
         self._frame_records = 0
         self._performance_records = 0
+        self._timing_records = 0
         self._error_records = 0
 
         self._session_dir: Path | None = None
@@ -144,6 +146,33 @@ class AsyncSessionLogger:
 
         self._log(record_type="performance", event=event, payload=payload, level=level, timestamp_ns=ts)
 
+    def log_timing(self, event: str, payload: dict | None = None, level: str = "DEBUG") -> None:
+        if not self._config.record_timing:
+            return
+
+        if not self._enabled or not self._started:
+            return
+
+        payload_dict = dict(payload) if payload is not None else {}
+        enqueue_start_ns = time.perf_counter_ns()
+
+        def _on_enqueued() -> None:
+            payload_dict["log_enqueue_ms"] = float(time.perf_counter_ns() - enqueue_start_ns) / 1_000_000.0
+
+        try:
+            record = LogRecord(
+                record_type="timing",
+                timestamp_ns=int(now_ns()),
+                level=str(level),
+                event=str(event),
+                payload=payload_dict,
+                sequence_id=self._next_sequence_id(),
+            )
+            self._enqueue_record(record, on_enqueued=_on_enqueued)
+        except Exception:
+            # Logging must never throw into caller path.
+            return
+
     def log_error(self, event: str, payload: dict | None = None) -> None:
         self._log(record_type="error", event=event, payload=payload, level="ERROR")
 
@@ -159,6 +188,7 @@ class AsyncSessionLogger:
                 event_records=self._event_records,
                 frame_records=self._frame_records,
                 performance_records=self._performance_records,
+                timing_records=self._timing_records,
                 error_records=self._error_records,
                 queue_size=queue_size,
             )
@@ -171,6 +201,7 @@ class AsyncSessionLogger:
             self._event_records = 0
             self._frame_records = 0
             self._performance_records = 0
+            self._timing_records = 0
             self._error_records = 0
 
     def _log(
@@ -199,7 +230,7 @@ class AsyncSessionLogger:
             # Logging must never throw into caller path.
             return
 
-    def _enqueue_record(self, record: LogRecord) -> None:
+    def _enqueue_record(self, record: LogRecord, on_enqueued: Callable[[], None] | None = None) -> None:
         high_priority = record.record_type not in _LOW_PRIORITY_RECORD_TYPES
 
         with self._queue_lock:
@@ -208,6 +239,8 @@ class AsyncSessionLogger:
 
             if current_size < max_size:
                 self._queue.append(record)
+                if on_enqueued is not None:
+                    on_enqueued()
                 self._record_enqueued_stats(record)
                 self._queue_event.set()
                 return
@@ -220,6 +253,8 @@ class AsyncSessionLogger:
                 dropped_low = self._drop_one_low_priority_locked()
                 if dropped_low:
                     self._queue.append(record)
+                    if on_enqueued is not None:
+                        on_enqueued()
                     self._record_enqueued_stats(record)
                     self._queue_event.set()
                     return
@@ -243,6 +278,8 @@ class AsyncSessionLogger:
                 self._frame_records += 1
             elif record.record_type == "performance":
                 self._performance_records += 1
+            elif record.record_type == "timing":
+                self._timing_records += 1
             elif record.record_type == "error":
                 self._error_records += 1
 
@@ -341,7 +378,10 @@ class AsyncSessionLogger:
         session_name = self._sanitize_session_name(self._config.session_name)
 
         session_dir = base_dir / f"{timestamp}_{session_name}"
-        session_file = session_dir / "teleop_session.jsonl"
+        if self._config.logging_mode == "timing":
+            session_file = session_dir / "teleop_timing.jsonl"
+        else:
+            session_file = session_dir / "teleop_session.jsonl"
         return session_dir, session_file
 
     def _write_metadata_file(self) -> None:

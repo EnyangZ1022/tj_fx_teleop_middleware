@@ -22,6 +22,7 @@ def test_cli_default_is_position_only() -> None:
 
     args = module.parse_args([])
     cfg = module._build_app_config(args)
+    logging_cfg = module._build_logging_config(args)
 
     assert cfg.teleop_mode == "position_only"
     assert cfg.control_mode == "joint_position"
@@ -32,6 +33,50 @@ def test_cli_default_is_position_only() -> None:
     assert args.win_high_res_timer_ms == 1
     assert args.spin_threshold_ms == 0.5
     assert cfg.spin_threshold_s == 0.0005
+    assert module._resolve_logging_mode(args) == "off"
+    assert cfg.logging_enabled is False
+    assert logging_cfg.enabled is False
+    assert logging_cfg.logging_mode == "off"
+
+
+def test_cli_legacy_logging_flag_maps_to_full_mode() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--logging"])
+    cfg = module._build_app_config(args)
+    logging_cfg = module._build_logging_config(args)
+
+    assert module._resolve_logging_mode(args) == "full"
+    assert cfg.logging_enabled is True
+    assert logging_cfg.enabled is True
+    assert logging_cfg.logging_mode == "full"
+    assert logging_cfg.record_frames is True
+    assert logging_cfg.record_performance is True
+    assert logging_cfg.record_timing is False
+
+
+def test_cli_logging_mode_timing_builds_lightweight_logging_config() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--logging-mode", "timing", "--rate-hz", "100"])
+    cfg = module._build_app_config(args)
+    logging_cfg = module._build_logging_config(args)
+
+    assert module._resolve_logging_mode(args) == "timing"
+    assert cfg.logging_enabled is True
+    assert logging_cfg.enabled is True
+    assert logging_cfg.logging_mode == "timing"
+    assert logging_cfg.record_timing is True
+    assert logging_cfg.record_frames is False
+    assert logging_cfg.record_performance is False
+
+
+def test_cli_logging_mode_has_priority_over_legacy_logging_flag() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--logging", "--logging-mode", "timing"])
+
+    assert module._resolve_logging_mode(args) == "timing"
 
 
 def test_cli_teleop_mode_position_orientation() -> None:

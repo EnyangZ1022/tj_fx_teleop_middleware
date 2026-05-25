@@ -3,15 +3,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+_ALLOWED_LOGGING_MODES = {"off", "timing", "full"}
+
+
 @dataclass(frozen=True)
 class LoggingConfig:
     enabled: bool = False
+    logging_mode: str = "full"
     log_dir: str = "logs"
     session_name: str | None = None
 
     record_events: bool = True
     record_frames: bool = False
     record_performance: bool = False
+    record_timing: bool = False
 
     frame_sample_hz: float = 10.0
     performance_sample_hz: float = 10.0
@@ -24,6 +29,11 @@ class LoggingConfig:
     json_indent: int | None = None
 
     def __post_init__(self) -> None:
+        mode = str(self.logging_mode).strip().lower()
+        if mode not in _ALLOWED_LOGGING_MODES:
+            raise ValueError(f"logging_mode must be one of {sorted(_ALLOWED_LOGGING_MODES)}")
+        object.__setattr__(self, "logging_mode", mode)
+
         if int(self.max_queue_size) <= 0:
             raise ValueError("max_queue_size must be positive")
         if int(self.batch_size) <= 0:

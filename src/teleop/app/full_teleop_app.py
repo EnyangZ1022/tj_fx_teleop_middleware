@@ -180,6 +180,9 @@ class FullTeleopApp:
             "right": {"enabled": False, "reason": "idle", "relative_angle_deg": None},
         }
         self._loop_start_time_s: float | None = None
+        self._last_loop_perf_ns: int | None = None
+        self._last_pico_pc_receive_ns: int | None = None
+        self._last_pico_source_timestamp_ns: int | None = None
 
     @property
     def calibration_state(self) -> DualArmCalibrationState | None:
@@ -239,6 +242,7 @@ class FullTeleopApp:
                     "spin_threshold_s": float(self.config.spin_threshold_s),
                     "ui_enabled": bool(self.ui_config.enabled),
                     "logging_enabled": bool(self.logging_config.enabled),
+                    "logging_mode": str(self.logging_config.logging_mode),
                     "teleop_mode": str(self.config.teleop_mode),
                     "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
                     "orientation_algorithm": str(self.config.orientation_tracking.orientation_algorithm),
@@ -270,8 +274,10 @@ class FullTeleopApp:
 
         try:
             while self._running:
+                loop_now_s = time.perf_counter()
+                deadline_late_ms = max(0.0, float(loop_now_s - next_tick) * 1000.0)
                 now_ns = time.time_ns()
-                self.step_once(now_ns)
+                self.step_once(now_ns, deadline_late_ms=deadline_late_ms)
 
                 if self.config.max_runtime_s is not None and self._loop_start_time_s is not None:
                     elapsed_s = time.perf_counter() - self._loop_start_time_s
@@ -321,13 +327,26 @@ class FullTeleopApp:
 
         self.logger.stop()
         self._reset_orientation_filter_runtime()
+        self._last_loop_perf_ns = None
+        self._last_pico_pc_receive_ns = None
+        self._last_pico_source_timestamp_ns = None
         self._initialized = False
 
-    def step_once(self, now_ns: int) -> None:
+    def step_once(self, now_ns: int, *, deadline_late_ms: float | None = None) -> None:
         curr_ns = int(now_ns)
+        loop_perf_ns = time.perf_counter_ns()
+
+        if self._last_loop_perf_ns is None:
+            loop_dt_ms = None
+        else:
+            loop_dt_ms = max(0.0, float(loop_perf_ns - self._last_loop_perf_ns) / 1_000_000.0)
+        self._last_loop_perf_ns = loop_perf_ns
 
         teleop_frame = self._read_teleop_frame()
+        perf_after_read_pico_ns = time.perf_counter_ns()
+
         feedback = self._read_robot_feedback()
+        perf_after_feedback_ns = time.perf_counter_ns()
 
         if teleop_frame is not None and self._previous_teleop_frame is None:
             # Reset filter memory when teleop stream starts/restarts to avoid stale state.
@@ -369,6 +388,7 @@ class FullTeleopApp:
                     "frame_id": int(teleop_frame.frame_id),
                 },
             )
+        perf_after_calibration_ns = time.perf_counter_ns()
 
         robot_target = self._build_robot_target(teleop_frame, feedback)
         self._refresh_orientation_debug_state()
@@ -387,6 +407,7 @@ class FullTeleopApp:
                             "frame_id": int(teleop_frame.frame_id) if teleop_frame is not None else None,
                         },
                     )
+        perf_after_transform_ns = time.perf_counter_ns()
 
         decision = self.safety_gate.evaluate(
             teleop_frame=teleop_frame,
@@ -400,13 +421,16 @@ class FullTeleopApp:
         else:
             # Never keep sending old targets once current safety evaluation blocks motion.
             self.target_buffer.clear()
+        perf_after_safety_ns = time.perf_counter_ns()
 
         command_target, diagnostics = self.scheduler.step(curr_ns)
         command_target = self._apply_single_arm_mode_to_command(command_target)
+        perf_after_scheduler_ns = time.perf_counter_ns()
 
         command_result = None
         if command_target is not None and self.command_adapter is not None:
             command_result = self.command_adapter.send_command(command_target, now_ns=curr_ns)
+        perf_after_send_ns = time.perf_counter_ns()
 
         self._publish_snapshot(
             now_ns=curr_ns,
@@ -417,6 +441,35 @@ class FullTeleopApp:
             diagnostics=diagnostics,
             command_result=command_result,
         )
+        perf_after_snapshot_ns = time.perf_counter_ns()
+
+        frame_id = int(teleop_frame.frame_id) if teleop_frame is not None else None
+        prev_frame_id = int(self._previous_teleop_frame.frame_id) if self._previous_teleop_frame is not None else None
+
+        pico_frame_new: bool | None = None
+        if frame_id is not None:
+            pico_frame_new = bool(prev_frame_id is None or frame_id != prev_frame_id)
+
+        frame_age_ms: float | None = None
+        pico_pc_rx_dt_ms: float | None = None
+        pico_internal_dt_ms: float | None = None
+
+        if teleop_frame is not None:
+            pc_receive_ns = int(teleop_frame.pc_receive_time_ns)
+            if pc_receive_ns > 0:
+                frame_age_ms = max(0.0, float(curr_ns - pc_receive_ns) / 1_000_000.0)
+                if self._last_pico_pc_receive_ns is not None:
+                    pico_pc_rx_dt_ms = max(0.0, float(pc_receive_ns - self._last_pico_pc_receive_ns) / 1_000_000.0)
+                self._last_pico_pc_receive_ns = pc_receive_ns
+
+            source_timestamp_ns = int(teleop_frame.source_timestamp_ns)
+            if source_timestamp_ns > 0:
+                if self._last_pico_source_timestamp_ns is not None:
+                    pico_internal_dt_ms = max(
+                        0.0,
+                        float(source_timestamp_ns - self._last_pico_source_timestamp_ns) / 1_000_000.0,
+                    )
+                self._last_pico_source_timestamp_ns = source_timestamp_ns
 
         self._latest_feedback = feedback
         self._latest_target = robot_target
@@ -428,6 +481,66 @@ class FullTeleopApp:
         left_pose = teleop_frame.left.pose_pico if teleop_frame is not None else None
         right_pose = teleop_frame.right.pose_pico if teleop_frame is not None else None
 
+        perf_before_log_ns = time.perf_counter_ns()
+        if self._is_full_logging_mode():
+            self._log_full_step(
+                teleop_frame=teleop_frame,
+                feedback=feedback,
+                decision=decision,
+                command_target=command_target,
+                diagnostics=diagnostics,
+                command_result=command_result,
+                left_pose=left_pose,
+                right_pose=right_pose,
+            )
+        elif self._is_timing_logging_mode():
+            period_ms = float(self.scheduler.period_s()) * 1000.0
+            self._log_timing_step(
+                curr_ns=curr_ns,
+                loop_perf_ns=loop_perf_ns,
+                loop_dt_ms=loop_dt_ms,
+                deadline_late_ms=deadline_late_ms,
+                period_ms=period_ms,
+                teleop_frame=teleop_frame,
+                feedback=feedback,
+                robot_target=robot_target,
+                decision=decision,
+                diagnostics=diagnostics,
+                command_target=command_target,
+                command_result=command_result,
+                pico_frame_new=pico_frame_new,
+                frame_age_ms=frame_age_ms,
+                pico_pc_rx_dt_ms=pico_pc_rx_dt_ms,
+                pico_internal_dt_ms=pico_internal_dt_ms,
+                perf_after_read_pico_ns=perf_after_read_pico_ns,
+                perf_after_feedback_ns=perf_after_feedback_ns,
+                perf_after_calibration_ns=perf_after_calibration_ns,
+                perf_after_transform_ns=perf_after_transform_ns,
+                perf_after_safety_ns=perf_after_safety_ns,
+                perf_after_scheduler_ns=perf_after_scheduler_ns,
+                perf_after_send_ns=perf_after_send_ns,
+                perf_after_snapshot_ns=perf_after_snapshot_ns,
+                perf_before_log_ns=perf_before_log_ns,
+            )
+
+    def _is_full_logging_mode(self) -> bool:
+        return bool(self.logging_config.enabled) and str(self.logging_config.logging_mode) == "full"
+
+    def _is_timing_logging_mode(self) -> bool:
+        return bool(self.logging_config.enabled) and str(self.logging_config.logging_mode) == "timing"
+
+    def _log_full_step(
+        self,
+        *,
+        teleop_frame: TeleopFrame | None,
+        feedback: DualArmRobotFeedback | None,
+        decision: SafetyDecision,
+        command_target: DualArmCommandTarget | None,
+        diagnostics: CommandLoopDiagnostics,
+        command_result: dict[str, Any] | None,
+        left_pose: Any,
+        right_pose: Any,
+    ) -> None:
         self.logger.log_frame(
             "teleop_step",
             payload={
@@ -522,6 +635,102 @@ class FullTeleopApp:
                 "limit_reason": str(diagnostics.limit_reason),
             },
         )
+
+    def _log_timing_step(
+        self,
+        *,
+        curr_ns: int,
+        loop_perf_ns: int,
+        loop_dt_ms: float | None,
+        deadline_late_ms: float | None,
+        period_ms: float,
+        teleop_frame: TeleopFrame | None,
+        feedback: DualArmRobotFeedback | None,
+        robot_target: DualArmRobotTarget | None,
+        decision: SafetyDecision,
+        diagnostics: CommandLoopDiagnostics,
+        command_target: DualArmCommandTarget | None,
+        command_result: dict[str, Any] | None,
+        pico_frame_new: bool | None,
+        frame_age_ms: float | None,
+        pico_pc_rx_dt_ms: float | None,
+        pico_internal_dt_ms: float | None,
+        perf_after_read_pico_ns: int,
+        perf_after_feedback_ns: int,
+        perf_after_calibration_ns: int,
+        perf_after_transform_ns: int,
+        perf_after_safety_ns: int,
+        perf_after_scheduler_ns: int,
+        perf_after_send_ns: int,
+        perf_after_snapshot_ns: int,
+        perf_before_log_ns: int,
+    ) -> None:
+        frame_id = int(teleop_frame.frame_id) if teleop_frame is not None else None
+        loop_dt_ms_value = float(loop_dt_ms) if loop_dt_ms is not None else float(diagnostics.dt_ms)
+        deadline_late_ms_value = max(0.0, float(deadline_late_ms)) if deadline_late_ms is not None else 0.0
+        loop_total_ms = max(0.0, float(perf_before_log_ns - loop_perf_ns) / 1_000_000.0)
+        overrun = bool(deadline_late_ms_value > 0.0 or loop_total_ms > float(period_ms))
+
+        command_ready = bool(command_target is not None)
+        left_sent = bool(command_result.get("left_sent")) if command_result is not None else False
+        right_sent = bool(command_result.get("right_sent")) if command_result is not None else False
+        left_reason = str(command_result.get("left_reason")) if command_result is not None else "not_sent"
+        right_reason = str(command_result.get("right_reason")) if command_result is not None else "not_sent"
+        send_ok = bool(command_result.get("ok")) if command_result is not None else False
+        send_failed = bool(command_ready and (command_result is None or not send_ok))
+
+        payload: dict[str, Any] = {
+            "loop_seq": int(diagnostics.sequence_id),
+            "loop_wall_ns": int(curr_ns),
+            "loop_perf_ns": int(loop_perf_ns),
+            "loop_dt_ms": loop_dt_ms_value,
+            "loop_total_ms": loop_total_ms,
+            "deadline_late_ms": deadline_late_ms_value,
+            "overrun": overrun,
+            "pico_frame_id": frame_id,
+            "frame_seq": frame_id,
+            "pico_frame_new": pico_frame_new,
+            "frame_age_ms": frame_age_ms,
+            "pico_pc_rx_dt_ms": pico_pc_rx_dt_ms,
+            "pico_internal_dt_ms": pico_internal_dt_ms,
+            "read_pico_ms": max(0.0, float(perf_after_read_pico_ns - loop_perf_ns) / 1_000_000.0),
+            "read_feedback_ms": max(0.0, float(perf_after_feedback_ns - perf_after_read_pico_ns) / 1_000_000.0),
+            "calibration_update_ms": max(
+                0.0,
+                float(perf_after_calibration_ns - perf_after_feedback_ns) / 1_000_000.0,
+            ),
+            "transform_ms": max(0.0, float(perf_after_transform_ns - perf_after_calibration_ns) / 1_000_000.0),
+            "safety_ms": max(0.0, float(perf_after_safety_ns - perf_after_transform_ns) / 1_000_000.0),
+            "scheduler_ms": max(0.0, float(perf_after_scheduler_ns - perf_after_safety_ns) / 1_000_000.0),
+            "send_command_ms": max(0.0, float(perf_after_send_ns - perf_after_scheduler_ns) / 1_000_000.0),
+            "publish_snapshot_ms": max(0.0, float(perf_after_snapshot_ns - perf_after_send_ns) / 1_000_000.0),
+            "loop_tail_ms": max(0.0, float(perf_before_log_ns - perf_after_snapshot_ns) / 1_000_000.0),
+            "command_ready": command_ready,
+            "target_available": bool(robot_target is not None),
+            "no_target": bool(robot_target is None),
+            "left_sent": left_sent,
+            "right_sent": right_sent,
+            "left_reason": left_reason,
+            "right_reason": right_reason,
+            "send_ok": send_ok,
+            "send_failed": send_failed,
+            "safety_state": str(decision.state.value),
+            "safety_reason": str(decision.global_reason),
+            "safety_left_reason": str(decision.left_reason),
+            "safety_right_reason": str(decision.right_reason),
+            "feedback_available": bool(feedback is not None),
+            "scheduler_dt_ms": float(diagnostics.dt_ms),
+            "scheduler_target_age_ms": diagnostics.target_age_ms,
+            "scheduler_zoh": bool(diagnostics.used_zero_order_hold),
+            "scheduler_limited": bool(diagnostics.limited),
+            "scheduler_limit_reason": str(diagnostics.limit_reason),
+        }
+
+        log_timing = getattr(self.logger, "log_timing", None)
+        if callable(log_timing):
+            log_timing("teleop_timing", payload=payload)
+        else:
+            self.logger.log_performance("teleop_timing", payload=payload)
 
     def request_stop(self) -> None:
         self._running = False

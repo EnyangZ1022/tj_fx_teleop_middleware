@@ -94,7 +94,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Keep dry-run mode enabled (default behavior)")
     parser.add_argument("--enable-send", action="store_true", help="Enable real robot command send")
     parser.add_argument("--ui", action="store_true", help="Enable diagnostic UI")
-    parser.add_argument("--logging", action="store_true", help="Enable async logging")
+    parser.add_argument(
+        "--logging",
+        action="store_true",
+        help="Legacy alias for --logging-mode full",
+    )
+    parser.add_argument(
+        "--logging-mode",
+        choices=["off", "timing", "full"],
+        default=None,
+        help="Logging mode selector: off (default), timing (lightweight profiling), full (existing detailed logs)",
+    )
     parser.add_argument(
         "--teleop-mode",
         choices=[TeleopMode.POSITION_ONLY.value, TeleopMode.POSITION_ORIENTATION.value],
@@ -255,13 +265,56 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         command_rate_hz=float(args.rate_hz),
         spin_threshold_s=float(args.spin_threshold_ms) / 1000.0,
         ui_enabled=bool(args.ui),
-        logging_enabled=bool(args.logging),
+        logging_enabled=(_resolve_logging_mode(args) != "off"),
         teleop_mode=teleop_mode,
         orientation_tracking=orientation_tracking,
         orientation_filter=orientation_filter,
         control_mode=str(args.control_mode),
         single_arm_mode=side_mode,
         max_runtime_s=float(args.max_runtime_s) if args.max_runtime_s is not None else None,
+    )
+
+
+def _resolve_logging_mode(args: argparse.Namespace, *, emit_warning: bool = False) -> str:
+    explicit_mode = args.logging_mode
+    if explicit_mode is not None:
+        mode = str(explicit_mode).strip().lower()
+        if emit_warning and bool(args.logging) and mode != "full":
+            print(f"Warning: --logging ignored because --logging-mode={mode} was explicitly provided.")
+        return mode
+
+    if bool(args.logging):
+        return "full"
+    return "off"
+
+
+def _build_logging_config(args: argparse.Namespace) -> LoggingConfig:
+    mode = _resolve_logging_mode(args)
+
+    if mode == "off":
+        return LoggingConfig(enabled=False, logging_mode="off")
+
+    if mode == "timing":
+        return LoggingConfig(
+            enabled=True,
+            logging_mode="timing",
+            record_events=True,
+            record_frames=False,
+            record_performance=False,
+            record_timing=True,
+            frame_sample_hz=float(args.rate_hz),
+            performance_sample_hz=min(float(args.rate_hz), 50.0),
+        )
+
+    return LoggingConfig(
+        enabled=True,
+        logging_mode="full",
+        record_events=True,
+        record_frames=True,
+        record_performance=True,
+        record_timing=False,
+        frame_sample_hz=float(args.rate_hz),
+        performance_sample_hz=min(float(args.rate_hz), 50.0),
     )
 
 
@@ -313,6 +366,7 @@ def _validate_runtime_args(args: argparse.Namespace) -> str | None:
 
 def main() -> int:
     args = parse_args()
+    logging_mode = _resolve_logging_mode(args, emit_warning=True)
 
     if int(args.win_high_res_timer_ms) > 15:
         print(
@@ -336,9 +390,11 @@ def main() -> int:
     ):
         app_config = _build_app_config(args)
         robot_command_config = _build_robot_command_config(args)
+        logging_config = _build_logging_config(args)
 
         print(f"Control mode: {app_config.control_mode}")
         print(f"Teleop mode: {app_config.teleop_mode}")
+        print(f"logging_mode: {logging_mode}")
         print(f"joint_limit_mode: {robot_command_config.joint_limit_mode}")
         print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
         print(f"max_joint_velocity_deg_s: {float(robot_command_config.max_joint_velocity_deg_s):.3f}")
@@ -366,16 +422,6 @@ def main() -> int:
             update_hz=20.0,
             window_title="TJ-FX Teleop Diagnostic UI",
         )
-        logging_config = LoggingConfig(enabled=bool(args.logging))
-        if bool(args.logging):
-            logging_config = LoggingConfig(
-                enabled=True,
-                record_events=True,
-                record_frames=True,
-                record_performance=True,
-                frame_sample_hz=float(args.rate_hz),
-                performance_sample_hz=min(float(args.rate_hz), 50.0),
-            )
 
         snapshot_store = LatestSnapshotStore() if bool(args.ui) else None
 

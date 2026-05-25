@@ -9,6 +9,7 @@ from teleop.core.pose import Pose7
 from teleop.core.robot_frame import DualArmRobotFeedback, RobotArmFeedback
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
 from teleop.filtering import OrientationFilterConfig
+from teleop.logging import LoggingConfig
 from teleop.transform.coordinate_transform import PositionOrientationCoordinateTransformer
 from teleop.transform.orientation_transform import OrientationTrackingConfig
 from teleop.app.full_teleop_app import sleep_until
@@ -156,6 +157,48 @@ class _FakeCommandAdapter:
         }
 
 
+class _SpyLogger:
+    def __init__(self):
+        self.started = False
+        self.stopped = False
+        self.events: list[tuple[str, dict | None]] = []
+        self.frames: list[tuple[str, dict | None]] = []
+        self.performance: list[tuple[str, dict | None]] = []
+        self.timing: list[tuple[str, dict | None]] = []
+        self.errors: list[tuple[str, dict | None]] = []
+
+    def start(self) -> None:
+        self.started = True
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def log_event(self, event: str, payload: dict | None = None, level: str = "INFO") -> None:
+        _ = level
+        self.events.append((event, payload))
+
+    def log_frame(self, event: str, payload: dict | None = None, level: str = "DEBUG") -> None:
+        _ = level
+        self.frames.append((event, payload))
+
+    def log_performance(self, event: str, payload: dict | None = None, level: str = "DEBUG") -> None:
+        _ = level
+        self.performance.append((event, payload))
+
+    def log_timing(self, event: str, payload: dict | None = None, level: str = "DEBUG") -> None:
+        _ = level
+        self.timing.append((event, payload))
+
+    def log_error(self, event: str, payload: dict | None = None) -> None:
+        self.errors.append((event, payload))
+
+    def get_stats(self):
+        class _Stats:
+            enabled = True
+
+        return _Stats()
+
+
 def test_app_no_command_send_without_calibration() -> None:
     cfg = FullTeleopAppConfig(connect_pico=True, connect_robot=True, dry_run=True, enable_send=False)
     provider = _FakeTeleopProvider([
@@ -267,6 +310,79 @@ def test_initialize_without_pico_connection() -> None:
     app.shutdown()
 
     assert app.teleop_provider is None
+
+
+def test_timing_logging_mode_emits_lightweight_timing_record() -> None:
+    cfg = FullTeleopAppConfig(connect_pico=False, connect_robot=False, dry_run=True, logging_enabled=True)
+    spy_logger = _SpyLogger()
+    logging_cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="timing",
+        record_events=False,
+        record_frames=False,
+        record_performance=False,
+        record_timing=True,
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        logging_config=logging_cfg,
+        logger=spy_logger,
+    )
+
+    app.initialize()
+    app.step_once(1_010_000_000, deadline_late_ms=0.2)
+    app.shutdown()
+
+    assert len(spy_logger.timing) >= 1
+    assert len(spy_logger.frames) == 0
+
+    timing_event, timing_payload = spy_logger.timing[-1]
+    assert timing_event == "teleop_timing"
+    assert timing_payload is not None
+
+    required_keys = {
+        "loop_seq",
+        "loop_wall_ns",
+        "loop_perf_ns",
+        "loop_dt_ms",
+        "loop_total_ms",
+        "deadline_late_ms",
+        "overrun",
+        "read_pico_ms",
+        "read_feedback_ms",
+        "calibration_update_ms",
+        "transform_ms",
+        "safety_ms",
+        "scheduler_ms",
+        "send_command_ms",
+        "publish_snapshot_ms",
+        "loop_tail_ms",
+        "command_ready",
+        "left_sent",
+        "right_sent",
+        "left_reason",
+        "right_reason",
+    }
+    assert required_keys.issubset(set(timing_payload.keys()))
+
+    forbidden_keys = {
+        "pico_left_xyz_m",
+        "pico_left_quat_xyzw",
+        "pico_right_xyz_m",
+        "pico_right_quat_xyzw",
+        "feedback_left_xyz_mm",
+        "feedback_left_abc_deg",
+        "feedback_right_xyz_mm",
+        "feedback_right_abc_deg",
+        "command_left_q_deg",
+        "command_right_q_deg",
+        "command_left_candidate_q_deg",
+        "command_right_candidate_q_deg",
+        "command_left_sent_q_deg",
+        "command_right_sent_q_deg",
+    }
+    assert forbidden_keys.isdisjoint(set(timing_payload.keys()))
 
 
 def test_app_command_config_uses_control_mode_and_rate() -> None:

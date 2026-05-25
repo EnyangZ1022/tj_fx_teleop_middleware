@@ -21,10 +21,10 @@ class _PayloadEnum(Enum):
     ALPHA = 1
 
 
-def _find_single_session_file(log_root: Path) -> Path:
+def _find_single_session_file(log_root: Path, *, file_name: str = "teleop_session.jsonl") -> Path:
     session_dirs = [p for p in log_root.iterdir() if p.is_dir()]
     assert len(session_dirs) == 1
-    session_file = session_dirs[0] / "teleop_session.jsonl"
+    session_file = session_dirs[0] / file_name
     assert session_file.exists()
     return session_file
 
@@ -144,3 +144,31 @@ def test_json_serialization_payload_types(tmp_path: Path) -> None:
     assert payload["dc"] == {"value": 7}
     assert payload["enum"] == "ALPHA"
     assert payload["tuple"] == [1, 2, 3]
+
+
+def test_timing_mode_writes_timing_jsonl(tmp_path: Path) -> None:
+    cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="timing",
+        log_dir=str(tmp_path),
+        record_events=False,
+        record_frames=False,
+        record_performance=False,
+        record_timing=True,
+        flush_interval_s=0.05,
+    )
+    logger = AsyncSessionLogger(cfg)
+
+    logger.start()
+    logger.log_timing("teleop_timing", {"loop_seq": 1, "loop_dt_ms": 10.0})
+    logger.stop()
+
+    session_file = _find_single_session_file(tmp_path, file_name="teleop_timing.jsonl")
+    lines = [ln for ln in session_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+
+    assert len(lines) >= 1
+    record = json.loads(lines[0])
+    assert record["record_type"] == "timing"
+    assert record["event"] == "teleop_timing"
+    assert record["payload"]["loop_seq"] == 1
+    assert "log_enqueue_ms" in record["payload"]

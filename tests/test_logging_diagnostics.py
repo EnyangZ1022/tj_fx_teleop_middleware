@@ -48,6 +48,7 @@ def test_stage7_scripts_import_without_side_effects() -> None:
     scripts = [
         root / "scripts" / "logging_dry_run.py",
         root / "scripts" / "analyze_teleop_log.py",
+        root / "scripts" / "analyze_timing_log.py",
         root / "scripts" / "replay_teleop_log.py",
     ]
 
