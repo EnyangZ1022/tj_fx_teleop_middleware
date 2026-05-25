@@ -36,6 +36,14 @@ def _max_abs_joint_delta(q_new: Sequence[float], q_ref: Sequence[float]) -> floa
     return max(abs(v) for v in _joint_delta_deg(q_new, q_ref))
 
 
+def _nominal_allowed_step_deg(config: RobotCommandConfig) -> float | None:
+    ctrl_hz = float(config.ctrl_hz)
+    if ctrl_hz <= 0.0:
+        return None
+    velocity_step_deg = float(config.max_joint_velocity_deg_s) / ctrl_hz
+    return min(float(config.max_joint_step_deg), velocity_step_deg)
+
+
 def _clip_joint_step(
     q_candidate: Sequence[float],
     q_ref: Sequence[float],
@@ -91,6 +99,7 @@ class _SideProcessResult:
     joint_ramped: bool
     candidate_q_deg: tuple[float, float, float, float, float, float, float] | None
     sent_q_deg: tuple[float, float, float, float, float, float, float] | None
+    ik_reference_source: str
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,7 @@ class _PreparedSideCommand:
     allowed_step_deg: float | None
     joint_ramped: bool
     candidate_q_deg: tuple[float, float, float, float, float, float, float] | None
+    ik_reference_source: str
 
 
 def _new_side_result(
@@ -119,6 +129,7 @@ def _new_side_result(
     joint_ramped: bool,
     candidate_q_deg: tuple[float, float, float, float, float, float, float] | None,
     sent_q_deg: tuple[float, float, float, float, float, float, float] | None,
+    ik_reference_source: str,
 ) -> _SideProcessResult:
     return _SideProcessResult(
         sent=bool(sent),
@@ -131,17 +142,26 @@ def _new_side_result(
         joint_ramped=bool(joint_ramped),
         candidate_q_deg=candidate_q_deg,
         sent_q_deg=sent_q_deg,
+        ik_reference_source=str(ik_reference_source),
     )
 
 
-def _new_result(dry_run: bool) -> dict[str, Any]:
+def _new_result(dry_run: bool, config: RobotCommandConfig) -> dict[str, Any]:
+    nominal_allowed_step_deg = _nominal_allowed_step_deg(config)
     return {
         "ok": False,
         "dry_run": bool(dry_run),
+        "ik_reference_mode": str(config.ik_reference_mode),
+        "joint_ramp_profile": str(config.joint_ramp_profile),
+        "max_joint_step_deg": float(config.max_joint_step_deg),
+        "max_joint_velocity_deg_s": float(config.max_joint_velocity_deg_s),
+        "nominal_allowed_step_deg": nominal_allowed_step_deg,
         "left_sent": False,
         "right_sent": False,
         "left_reason": "not_processed",
         "right_reason": "not_processed",
+        "left_ik_reference_source": "unavailable",
+        "right_ik_reference_source": "unavailable",
         "left_q_deg": None,
         "right_q_deg": None,
         "left_candidate_q_deg": None,
@@ -264,7 +284,7 @@ class RobotCommandAdapter:
 
     def send_command(self, command: DualArmCommandTarget, now_ns: int | None = None) -> dict[str, Any]:
         dry_run = bool(self._config.dry_run)
-        result = _new_result(dry_run)
+        result = _new_result(dry_run, self._config)
 
         if not self._prepared or not self.active:
             result["left_reason"] = "not_prepared"
@@ -332,6 +352,8 @@ class RobotCommandAdapter:
         result["right_sent"] = right_result.sent
         result["left_reason"] = left_result.reason
         result["right_reason"] = right_result.reason
+        result["left_ik_reference_source"] = left_result.ik_reference_source
+        result["right_ik_reference_source"] = right_result.ik_reference_source
         result["left_q_deg"] = left_result.q_deg
         result["right_q_deg"] = right_result.q_deg
         result["left_candidate_q_deg"] = left_result.candidate_q_deg
@@ -376,6 +398,7 @@ class RobotCommandAdapter:
         now_ns: int,
         old_time_ns: int | None,
     ) -> _PreparedSideCommand:
+        _ = side
         if target is None:
             return _PreparedSideCommand(
                 send_planned=False,
@@ -388,6 +411,7 @@ class RobotCommandAdapter:
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
+                ik_reference_source="unavailable",
             )
 
         if not send_allowed:
@@ -402,6 +426,7 @@ class RobotCommandAdapter:
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
+                ik_reference_source="unavailable",
             )
 
         if ik_adapter is None:
@@ -416,6 +441,7 @@ class RobotCommandAdapter:
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
+                ik_reference_source="unavailable",
             )
 
         valid, reason = _validate_arm_target(target)
@@ -431,12 +457,15 @@ class RobotCommandAdapter:
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
+                ik_reference_source="unavailable",
             )
+
+        ik_reference_q_deg, ik_reference_source = self._select_ik_reference(target=target, last_q=last_q)
 
         q = ik_adapter.solve_xyzabc_mm_deg(
             position_xyz_mm=target.position_xyz_mm,
             orientation_abc_deg=target.orientation_abc_deg,
-            ik_reference_q_deg=target.ik_reference_q_deg,
+            ik_reference_q_deg=ik_reference_q_deg,
         )
         solver_note = str(getattr(ik_adapter, "last_solver_note", ""))
         if q is None:
@@ -451,6 +480,7 @@ class RobotCommandAdapter:
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
+                ik_reference_source=ik_reference_source,
             )
 
         if len(q) != 7:
@@ -465,6 +495,7 @@ class RobotCommandAdapter:
                 allowed_step_deg=None,
                 joint_ramped=False,
                 candidate_q_deg=None,
+                ik_reference_source=ik_reference_source,
             )
 
         q_candidate = _normalize_q7(q)
@@ -501,6 +532,7 @@ class RobotCommandAdapter:
                     allowed_step_deg=None,
                     joint_ramped=False,
                     candidate_q_deg=q_candidate,
+                    ik_reference_source=ik_reference_source,
                 )
 
             velocity_step_deg = float(self._config.max_joint_velocity_deg_s) * dt_s
@@ -526,6 +558,7 @@ class RobotCommandAdapter:
                         allowed_step_deg=allowed_step_deg,
                         joint_ramped=False,
                         candidate_q_deg=q_candidate,
+                        ik_reference_source=ik_reference_source,
                     )
 
                 if self._config.joint_limit_mode == "ramp":
@@ -549,7 +582,26 @@ class RobotCommandAdapter:
             allowed_step_deg=allowed_step_deg,
             joint_ramped=joint_ramped,
             candidate_q_deg=q_candidate,
+            ik_reference_source=ik_reference_source,
         )
+
+    def _select_ik_reference(
+        self,
+        *,
+        target: ArmCommandTarget,
+        last_q: tuple[float, float, float, float, float, float, float] | None,
+    ) -> tuple[tuple[float, float, float, float, float, float, float], str]:
+        fixed_reference = _normalize_q7(target.ik_reference_q_deg)
+        if str(self._config.ik_reference_mode) != "last_sent":
+            return fixed_reference, "fixed"
+
+        if last_q is not None:
+            try:
+                return _normalize_q7(last_q), "last_sent"
+            except Exception:
+                pass
+
+        return fixed_reference, "fallback_fixed"
 
     def _finalize_side_result(
         self,
@@ -570,6 +622,7 @@ class RobotCommandAdapter:
                 joint_ramped=prepared.joint_ramped,
                 candidate_q_deg=prepared.candidate_q_deg,
                 sent_q_deg=None,
+                ik_reference_source=prepared.ik_reference_source,
             )
 
         if prepared.q_to_send is None:
@@ -584,6 +637,7 @@ class RobotCommandAdapter:
                 joint_ramped=prepared.joint_ramped,
                 candidate_q_deg=prepared.candidate_q_deg,
                 sent_q_deg=None,
+                ik_reference_source=prepared.ik_reference_source,
             )
 
         if dry_run:
@@ -598,6 +652,7 @@ class RobotCommandAdapter:
                 joint_ramped=prepared.joint_ramped,
                 candidate_q_deg=prepared.candidate_q_deg,
                 sent_q_deg=prepared.q_to_send,
+                ik_reference_source=prepared.ik_reference_source,
             )
 
         if packet_sent:
@@ -612,6 +667,7 @@ class RobotCommandAdapter:
                 joint_ramped=prepared.joint_ramped,
                 candidate_q_deg=prepared.candidate_q_deg,
                 sent_q_deg=prepared.q_to_send,
+                ik_reference_source=prepared.ik_reference_source,
             )
 
         return _new_side_result(
@@ -625,6 +681,7 @@ class RobotCommandAdapter:
             joint_ramped=prepared.joint_ramped,
             candidate_q_deg=prepared.candidate_q_deg,
             sent_q_deg=None,
+            ik_reference_source=prepared.ik_reference_source,
         )
 
     def _send_prepared_commands(

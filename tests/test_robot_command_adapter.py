@@ -114,6 +114,8 @@ def _count_calls(robot: _FakeRobot, name: str) -> int:
 def test_default_joint_limit_mode_is_reject() -> None:
     cfg = RobotCommandConfig()
     assert cfg.joint_limit_mode == "reject"
+    assert cfg.ik_reference_mode == "fixed"
+    assert cfg.joint_ramp_profile == "manual"
 
 
 def test_command_adapter_dry_run_no_send() -> None:
@@ -559,6 +561,85 @@ def test_fixed_ik_reference_is_used_not_previous_solution() -> None:
 
     assert left_queue.calls[0][2] == ref1
     assert left_queue.calls[1][2] == ref2
+
+
+def test_last_sent_ik_reference_mode_uses_sent_q_and_fallback_fixed() -> None:
+    adapter, _ = _prepare_adapter(
+        RobotCommandConfig(
+            dry_run=False,
+            command_enabled=True,
+            ik_reference_mode="last_sent",
+            joint_limit_mode="ramp",
+            max_joint_step_deg=2.0,
+            max_joint_velocity_deg_s=1000.0,
+        )
+    )
+    left_queue = _QueueIK(
+        [
+            (0, 0, 0, 0, 0, 0, 0),
+            (10, 0, 0, 0, 0, 0, 0),
+            (3, 0, 0, 0, 0, 0, 0),
+        ]
+    )
+    adapter.left_ik_adapter = left_queue
+
+    fixed_ref = (90.0, -90.0, -90.0, -90.0, 0.0, 0.0, 0.0)
+
+    first = adapter.send_command(_dual(_arm_target(100.0, ik_ref=fixed_ref), None), now_ns=1_000_000_000)
+    second = adapter.send_command(_dual(_arm_target(101.0, ik_ref=fixed_ref), None), now_ns=2_000_000_000)
+    third = adapter.send_command(_dual(_arm_target(102.0, ik_ref=fixed_ref), None), now_ns=3_000_000_000)
+
+    assert first["left_sent"] is True
+    assert first["left_ik_reference_source"] == "fallback_fixed"
+    assert left_queue.calls[0][2] == fixed_ref
+
+    assert second["left_sent"] is True
+    assert second["left_joint_ramped"] is True
+    assert second["left_sent_q_deg"] == (2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+    assert second["left_ik_reference_source"] == "last_sent"
+    assert left_queue.calls[1][2] == (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+    assert third["left_sent"] is True
+    assert third["left_ik_reference_source"] == "last_sent"
+    assert left_queue.calls[2][2] == (2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+
+
+def test_last_sent_ik_reference_mode_send_failure_keeps_last_sent_reference() -> None:
+    adapter, sdk = _prepare_adapter(
+        RobotCommandConfig(
+            dry_run=False,
+            command_enabled=True,
+            ik_reference_mode="last_sent",
+            joint_limit_mode="ramp",
+            max_joint_step_deg=2.0,
+            max_joint_velocity_deg_s=1000.0,
+        )
+    )
+    left_queue = _QueueIK(
+        [
+            (0, 0, 0, 0, 0, 0, 0),
+            (10, 0, 0, 0, 0, 0, 0),
+            (4, 0, 0, 0, 0, 0, 0),
+        ]
+    )
+    adapter.left_ik_adapter = left_queue
+    fixed_ref = (90.0, -90.0, -90.0, -90.0, 0.0, 0.0, 0.0)
+
+    first = adapter.send_command(_dual(_arm_target(100.0, ik_ref=fixed_ref), None), now_ns=1_000_000_000)
+    assert first["left_sent"] is True
+
+    sdk.robot.send_cmd_return = 0
+    failed = adapter.send_command(_dual(_arm_target(101.0, ik_ref=fixed_ref), None), now_ns=2_000_000_000)
+    assert failed["left_sent"] is False
+    assert failed["left_reason"] == "send_failed"
+    assert failed["left_ik_reference_source"] == "last_sent"
+
+    sdk.robot.send_cmd_return = 1
+    third = adapter.send_command(_dual(_arm_target(102.0, ik_ref=fixed_ref), None), now_ns=3_000_000_000)
+    assert third["left_sent"] is True
+    assert third["left_ik_reference_source"] == "last_sent"
+    # Because second send failed, last_sent reference for the third IK call remains from first sent command.
+    assert left_queue.calls[2][2] == (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 
 def test_enter_command_mode_joint_impedance_calls_sdk_methods() -> None:

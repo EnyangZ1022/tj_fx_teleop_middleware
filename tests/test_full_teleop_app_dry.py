@@ -380,8 +380,17 @@ def test_timing_logging_mode_emits_lightweight_timing_record() -> None:
         "right_sent",
         "left_reason",
         "right_reason",
+        "ik_reference_mode",
+        "left_ik_reference_source",
+        "right_ik_reference_source",
+        "joint_ramp_profile",
+        "max_joint_step_deg",
+        "max_joint_velocity_deg_s",
+        "nominal_allowed_step_deg",
     }
     assert required_keys.issubset(set(timing_payload.keys()))
+    assert timing_payload.get("ik_reference_mode") == "fixed"
+    assert timing_payload.get("joint_ramp_profile") == "manual"
 
     forbidden_keys = {
         "pico_left_xyz_m",

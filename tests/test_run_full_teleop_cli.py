@@ -248,6 +248,80 @@ def test_cli_joint_limit_mode_and_joint_limits_override() -> None:
     assert robot_cfg.max_joint_velocity_deg_s == 190.0
 
 
+def test_cli_default_ik_reference_mode_and_joint_ramp_profile() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args([])
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert args.ik_reference_mode == "fixed"
+    assert args.joint_ramp_profile == "manual"
+    assert robot_cfg.ik_reference_mode == "fixed"
+    assert robot_cfg.joint_ramp_profile == "manual"
+
+
+def test_cli_ik_reference_mode_last_sent_propagates_to_robot_command_config() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--ik-reference-mode", "last_sent"])
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert robot_cfg.ik_reference_mode == "last_sent"
+
+
+def test_cli_joint_ramp_profile_balanced_100hz_resolves_defaults() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--joint-ramp-profile", "balanced_100hz"])
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert robot_cfg.joint_ramp_profile == "balanced_100hz"
+    assert robot_cfg.max_joint_step_deg == 1.6
+    assert robot_cfg.max_joint_velocity_deg_s == 190.0
+
+
+def test_cli_joint_ramp_profile_stable_50hz_resolves_defaults() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--joint-ramp-profile", "stable_50hz"])
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert robot_cfg.joint_ramp_profile == "stable_50hz"
+    assert robot_cfg.max_joint_step_deg == 4.0
+    assert robot_cfg.max_joint_velocity_deg_s == 220.0
+
+
+def test_cli_joint_ramp_profile_fast_100hz_resolves_defaults() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--joint-ramp-profile", "fast_100hz"])
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert robot_cfg.joint_ramp_profile == "fast_100hz"
+    assert robot_cfg.max_joint_step_deg == 2.2
+    assert robot_cfg.max_joint_velocity_deg_s == 240.0
+
+
+def test_cli_joint_ramp_profile_explicit_override_wins() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(
+        [
+            "--joint-ramp-profile",
+            "fast_100hz",
+            "--max-joint-step-deg",
+            "1.9",
+            "--max-joint-velocity-deg-s",
+            "210",
+        ]
+    )
+    robot_cfg = module._build_robot_command_config(args)
+
+    assert robot_cfg.joint_ramp_profile == "fast_100hz"
+    assert robot_cfg.max_joint_step_deg == 1.9
+    assert robot_cfg.max_joint_velocity_deg_s == 210.0
+
+
 def test_cli_joint_limit_defaults_preserve_robot_command_default() -> None:
     module = _load_run_full_teleop_module()
 

@@ -253,6 +253,19 @@ def handle_client(conn: socket.socket, addr: tuple[str, int], on_state_json: OnS
     LOGGER.info("TCP client disconnected from %s:%s", addr[0], addr[1])
 
 
+def _configure_client_socket_options(conn: socket.socket) -> None:
+    if hasattr(socket, "TCP_NODELAY"):
+        try:
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            LOGGER.debug("Failed to set TCP_NODELAY on Pico TCP client socket", exc_info=True)
+
+    try:
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+    except OSError:
+        LOGGER.debug("Failed to set SO_KEEPALIVE on Pico TCP client socket", exc_info=True)
+
+
 def tcp_server_loop(stop_event: threading.Event, on_state_json: OnStateJsonCallback) -> None:
     LOGGER.info("Starting TCP server on port %d", TCP_PORT)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -272,6 +285,8 @@ def tcp_server_loop(stop_event: threading.Event, on_state_json: OnStateJsonCallb
                 conn, addr = srv.accept()
             except socket.timeout:
                 continue
+
+            _configure_client_socket_options(conn)
 
             thread = threading.Thread(
                 target=handle_client,

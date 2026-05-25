@@ -260,6 +260,10 @@ class FullTeleopApp:
                     "pico_prediction_max_frame_age_ms": float(self.config.pico_prediction_max_frame_age_ms),
                     "pico_velocity_filter_beta": float(self.config.pico_velocity_filter_beta),
                     "pico_max_predicted_step_mm": float(self.config.pico_max_predicted_step_mm),
+                    "ik_reference_mode": str(self.robot_command_config.ik_reference_mode),
+                    "joint_ramp_profile": str(self.robot_command_config.joint_ramp_profile),
+                    "max_joint_step_deg": float(self.robot_command_config.max_joint_step_deg),
+                    "max_joint_velocity_deg_s": float(self.robot_command_config.max_joint_velocity_deg_s),
                     "teleop_mode": str(self.config.teleop_mode),
                     "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
                     "orientation_algorithm": str(self.config.orientation_tracking.orientation_algorithm),
@@ -772,6 +776,50 @@ class FullTeleopApp:
         send_ok = bool(command_result.get("ok")) if command_result is not None else False
         send_failed = bool(command_ready and (command_result is None or not send_ok))
 
+        config_ctrl_hz = float(self.robot_command_config.ctrl_hz)
+        config_nominal_allowed_step_deg: float | None = None
+        if config_ctrl_hz > 0.0:
+            config_nominal_allowed_step_deg = min(
+                float(self.robot_command_config.max_joint_step_deg),
+                float(self.robot_command_config.max_joint_velocity_deg_s) / config_ctrl_hz,
+            )
+
+        ik_reference_mode = (
+            str(command_result.get("ik_reference_mode"))
+            if command_result is not None and command_result.get("ik_reference_mode") is not None
+            else str(self.robot_command_config.ik_reference_mode)
+        )
+        left_ik_reference_source = (
+            str(command_result.get("left_ik_reference_source"))
+            if command_result is not None and command_result.get("left_ik_reference_source") is not None
+            else "unavailable"
+        )
+        right_ik_reference_source = (
+            str(command_result.get("right_ik_reference_source"))
+            if command_result is not None and command_result.get("right_ik_reference_source") is not None
+            else "unavailable"
+        )
+        joint_ramp_profile = (
+            str(command_result.get("joint_ramp_profile"))
+            if command_result is not None and command_result.get("joint_ramp_profile") is not None
+            else str(self.robot_command_config.joint_ramp_profile)
+        )
+        max_joint_step_deg = (
+            float(command_result.get("max_joint_step_deg"))
+            if command_result is not None and command_result.get("max_joint_step_deg") is not None
+            else float(self.robot_command_config.max_joint_step_deg)
+        )
+        max_joint_velocity_deg_s = (
+            float(command_result.get("max_joint_velocity_deg_s"))
+            if command_result is not None and command_result.get("max_joint_velocity_deg_s") is not None
+            else float(self.robot_command_config.max_joint_velocity_deg_s)
+        )
+        nominal_allowed_step_deg = (
+            float(command_result.get("nominal_allowed_step_deg"))
+            if command_result is not None and command_result.get("nominal_allowed_step_deg") is not None
+            else config_nominal_allowed_step_deg
+        )
+
         payload: dict[str, Any] = {
             "loop_seq": int(diagnostics.sequence_id),
             "loop_wall_ns": int(curr_ns),
@@ -820,6 +868,13 @@ class FullTeleopApp:
             "right_reason": right_reason,
             "send_ok": send_ok,
             "send_failed": send_failed,
+            "ik_reference_mode": ik_reference_mode,
+            "left_ik_reference_source": left_ik_reference_source,
+            "right_ik_reference_source": right_ik_reference_source,
+            "joint_ramp_profile": joint_ramp_profile,
+            "max_joint_step_deg": max_joint_step_deg,
+            "max_joint_velocity_deg_s": max_joint_velocity_deg_s,
+            "nominal_allowed_step_deg": nominal_allowed_step_deg,
             "safety_state": str(decision.state.value),
             "safety_reason": str(decision.global_reason),
             "safety_left_reason": str(decision.left_reason),

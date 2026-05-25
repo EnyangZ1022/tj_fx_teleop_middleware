@@ -24,6 +24,13 @@ from teleop.ui.snapshot import LatestSnapshotStore
 from teleop.ui.ui_config import UIConfig
 
 
+_JOINT_RAMP_PROFILE_DEFAULTS: dict[str, tuple[float, float]] = {
+    "stable_50hz": (4.0, 220.0),
+    "balanced_100hz": (1.6, 190.0),
+    "fast_100hz": (2.2, 240.0),
+}
+
+
 @contextmanager
 def _windows_high_res_timer(enable: bool, period_ms: int):
     """Temporarily request a high-resolution Windows timer.
@@ -155,6 +162,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["reject", "ramp"],
         default="reject",
         help="Unified joint limit handling mode (reject default, ramp experimental)",
+    )
+    parser.add_argument(
+        "--ik-reference-mode",
+        choices=["fixed", "last_sent"],
+        default="fixed",
+        help="IK reference mode: fixed (default) or last_sent (use last successfully sent q when available)",
+    )
+    parser.add_argument(
+        "--joint-ramp-profile",
+        choices=["manual", "stable_50hz", "balanced_100hz", "fast_100hz"],
+        default="manual",
+        help="Joint ramp profile preset. Explicit --max-joint-step-deg/--max-joint-velocity-deg-s overrides still win",
     )
     parser.add_argument(
         "--max-joint-step-deg",
@@ -356,13 +375,31 @@ def _build_logging_config(args: argparse.Namespace) -> LoggingConfig:
 
 
 def _build_robot_command_config(args: argparse.Namespace) -> RobotCommandConfig:
+    profile_name = str(args.joint_ramp_profile).strip().lower()
+    default_config = RobotCommandConfig()
+
+    if profile_name == "manual":
+        resolved_step_deg = float(default_config.max_joint_step_deg)
+        resolved_velocity_deg_s = float(default_config.max_joint_velocity_deg_s)
+    else:
+        profile_defaults = _JOINT_RAMP_PROFILE_DEFAULTS.get(profile_name)
+        if profile_defaults is None:
+            raise ValueError(f"Unsupported joint ramp profile: {profile_name!r}")
+        resolved_step_deg = float(profile_defaults[0])
+        resolved_velocity_deg_s = float(profile_defaults[1])
+
+    if args.max_joint_step_deg is not None:
+        resolved_step_deg = float(args.max_joint_step_deg)
+    if args.max_joint_velocity_deg_s is not None:
+        resolved_velocity_deg_s = float(args.max_joint_velocity_deg_s)
+
     overrides: dict[str, float | str] = {
         "joint_limit_mode": str(args.joint_limit_mode),
+        "ik_reference_mode": str(args.ik_reference_mode),
+        "joint_ramp_profile": profile_name,
+        "max_joint_step_deg": resolved_step_deg,
+        "max_joint_velocity_deg_s": resolved_velocity_deg_s,
     }
-    if args.max_joint_step_deg is not None:
-        overrides["max_joint_step_deg"] = float(args.max_joint_step_deg)
-    if args.max_joint_velocity_deg_s is not None:
-        overrides["max_joint_velocity_deg_s"] = float(args.max_joint_velocity_deg_s)
     return RobotCommandConfig(**overrides)
 
 
@@ -445,9 +482,19 @@ def main() -> int:
         print(f"Control mode: {app_config.control_mode}")
         print(f"Teleop mode: {app_config.teleop_mode}")
         print(f"logging_mode: {logging_mode}")
+        print(f"command_rate_hz: {float(args.rate_hz):.3f}")
         print(f"joint_limit_mode: {robot_command_config.joint_limit_mode}")
+        print(f"ik_reference_mode: {robot_command_config.ik_reference_mode}")
+        print(f"joint_ramp_profile: {robot_command_config.joint_ramp_profile}")
         print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
         print(f"max_joint_velocity_deg_s: {float(robot_command_config.max_joint_velocity_deg_s):.3f}")
+        expected_velocity_step_deg = float(robot_command_config.max_joint_velocity_deg_s) / float(args.rate_hz)
+        effective_nominal_allowed_step_deg = min(
+            float(robot_command_config.max_joint_step_deg),
+            expected_velocity_step_deg,
+        )
+        print(f"expected_velocity_step_deg: {expected_velocity_step_deg:.3f}")
+        print(f"effective_nominal_allowed_step_deg: {effective_nominal_allowed_step_deg:.3f}")
         print(f"spin_threshold_ms: {float(args.spin_threshold_ms):.3f}")
         print(f"pico_resample_mode: {app_config.pico_resample_mode}")
         if app_config.pico_resample_mode == "predictive":

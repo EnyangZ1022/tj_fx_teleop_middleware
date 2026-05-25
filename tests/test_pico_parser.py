@@ -1,6 +1,9 @@
 import json
 
+import pytest
+
 from teleop.core.pico_frame import PicoRawFrame
+import teleop.input.pico_receiver as pico_receiver_module
 from teleop.input.pico_receiver import PicoReceiver, parse_pose_str, parse_state_json
 
 
@@ -92,3 +95,42 @@ def test_pico_receiver_emits_receiver_timing_payload() -> None:
     latest = receiver.get_latest_frame()
     assert latest is not None
     assert latest.receiver_seq == 1
+
+
+def test_configure_client_socket_options_sets_tcp_nodelay_and_keepalive() -> None:
+    calls: list[tuple[int, int, int]] = []
+
+    class _FakeSocket:
+        def setsockopt(self, level: int, name: int, value: int) -> None:
+            calls.append((int(level), int(name), int(value)))
+
+    pico_receiver_module._configure_client_socket_options(_FakeSocket())
+
+    assert (int(pico_receiver_module.socket.SOL_SOCKET), int(pico_receiver_module.socket.SO_KEEPALIVE), 1) in calls
+    if hasattr(pico_receiver_module.socket, "TCP_NODELAY"):
+        assert (
+            int(pico_receiver_module.socket.IPPROTO_TCP),
+            int(pico_receiver_module.socket.TCP_NODELAY),
+            1,
+        ) in calls
+
+
+def test_configure_client_socket_options_handles_oserror_and_logs_debug(monkeypatch: pytest.MonkeyPatch) -> None:
+    debug_calls: list[str] = []
+
+    class _RaisingSocket:
+        def setsockopt(self, level: int, name: int, value: int) -> None:
+            _ = (level, name, value)
+            raise OSError("unsupported")
+
+    monkeypatch.setattr(
+        pico_receiver_module.LOGGER,
+        "debug",
+        lambda message, *args, **kwargs: debug_calls.append(str(message)),
+    )
+
+    pico_receiver_module._configure_client_socket_options(_RaisingSocket())
+
+    assert any("SO_KEEPALIVE" in message for message in debug_calls)
+    if hasattr(pico_receiver_module.socket, "TCP_NODELAY"):
+        assert any("TCP_NODELAY" in message for message in debug_calls)

@@ -7,6 +7,8 @@ from teleop.robot.ik_config import IKSolverConfig
 
 _ALLOWED_CONTROL_MODES = {"joint_position", "joint_impedance"}
 _ALLOWED_JOINT_LIMIT_MODES = {"reject", "ramp"}
+_ALLOWED_IK_REFERENCE_MODES = {"fixed", "last_sent"}
+_ALLOWED_JOINT_RAMP_PROFILES = {"manual", "stable_50hz", "balanced_100hz", "fast_100hz"}
 
 
 def _normalize_tuple7(name: str, values: tuple[float, ...]) -> tuple[float, ...]:
@@ -26,6 +28,8 @@ class RobotCommandConfig:
     max_joint_step_deg: float = 1.8
     max_joint_velocity_deg_s: float = 180.0
     joint_limit_mode: str = "reject"
+    ik_reference_mode: str = "fixed"
+    joint_ramp_profile: str = "manual"
 
     send_left: bool = True
     send_right: bool = True
@@ -50,6 +54,20 @@ class RobotCommandConfig:
                 f"joint_limit_mode must be one of {_ALLOWED_JOINT_LIMIT_MODES}, got {self.joint_limit_mode!r}"
             )
         object.__setattr__(self, "joint_limit_mode", joint_limit_mode)
+
+        ik_reference_mode = str(self.ik_reference_mode).strip().lower()
+        if ik_reference_mode not in _ALLOWED_IK_REFERENCE_MODES:
+            raise ValueError(
+                f"ik_reference_mode must be one of {_ALLOWED_IK_REFERENCE_MODES}, got {self.ik_reference_mode!r}"
+            )
+        object.__setattr__(self, "ik_reference_mode", ik_reference_mode)
+
+        joint_ramp_profile = str(self.joint_ramp_profile).strip().lower()
+        if joint_ramp_profile not in _ALLOWED_JOINT_RAMP_PROFILES:
+            raise ValueError(
+                f"joint_ramp_profile must be one of {_ALLOWED_JOINT_RAMP_PROFILES}, got {self.joint_ramp_profile!r}"
+            )
+        object.__setattr__(self, "joint_ramp_profile", joint_ramp_profile)
 
         if int(self.ctrl_hz) <= 0:
             raise ValueError("ctrl_hz must be positive")
