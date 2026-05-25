@@ -441,6 +441,97 @@ def _summarize_predictive_fields(rows: list[dict[str, Any]]) -> None:
     _print_stats("predicted_right_pos_step_mm", _collect_numeric(rows, "predicted_right_pos_step_mm"))
 
 
+def _bool_count_and_ratio(rows: list[dict[str, Any]], key: str) -> tuple[int, int, float | None]:
+    true_count = 0
+    known_count = 0
+    for row in rows:
+        value = _as_bool(row.get(key))
+        if value is None:
+            continue
+        known_count += 1
+        if value:
+            true_count += 1
+    ratio = (float(true_count) / float(known_count)) if known_count > 0 else None
+    return true_count, known_count, ratio
+
+
+def _summarize_safety_fields(rows: list[dict[str, Any]]) -> None:
+    left_reason_counts: Counter[str] = Counter()
+    right_reason_counts: Counter[str] = Counter()
+    for row in rows:
+        left_reason = _as_str(row.get("safety_left_reason"))
+        right_reason = _as_str(row.get("safety_right_reason"))
+        if left_reason:
+            left_reason_counts[left_reason] += 1
+        if right_reason:
+            right_reason_counts[right_reason] += 1
+
+    if left_reason_counts:
+        print(f"safety_left_reason counts: {left_reason_counts.most_common(8)}")
+    else:
+        print("safety_left_reason counts: N/A")
+
+    if right_reason_counts:
+        print(f"safety_right_reason counts: {right_reason_counts.most_common(8)}")
+    else:
+        print("safety_right_reason counts: N/A")
+
+    left_clamped_count, left_clamped_known, left_clamped_ratio = _bool_count_and_ratio(rows, "safety_left_clamped")
+    right_clamped_count, right_clamped_known, right_clamped_ratio = _bool_count_and_ratio(rows, "safety_right_clamped")
+    print(
+        "safety_left_clamped: "
+        f"count={left_clamped_count}, known={left_clamped_known}, ratio={_fmt(left_clamped_ratio, digits=4)}"
+    )
+    print(
+        "safety_right_clamped: "
+        f"count={right_clamped_count}, known={right_clamped_known}, ratio={_fmt(right_clamped_ratio, digits=4)}"
+    )
+
+    left_reanchored_count, left_reanchored_known, left_reanchored_ratio = _bool_count_and_ratio(
+        rows,
+        "safety_left_reanchored",
+    )
+    right_reanchored_count, right_reanchored_known, right_reanchored_ratio = _bool_count_and_ratio(
+        rows,
+        "safety_right_reanchored",
+    )
+    print(
+        "safety_left_reanchored: "
+        f"count={left_reanchored_count}, known={left_reanchored_known}, ratio={_fmt(left_reanchored_ratio, digits=4)}"
+    )
+    print(
+        "safety_right_reanchored: "
+        f"count={right_reanchored_count}, known={right_reanchored_known}, ratio={_fmt(right_reanchored_ratio, digits=4)}"
+    )
+
+    clamp_distance_values = _collect_numeric(rows, "safety_left_clamp_distance_mm") + _collect_numeric(
+        rows,
+        "safety_right_clamp_distance_mm",
+    )
+    raw_to_safe_values = _collect_numeric(rows, "safety_left_raw_to_safe_error_mm") + _collect_numeric(
+        rows,
+        "safety_right_raw_to_safe_error_mm",
+    )
+    reanchor_offset_values = _collect_numeric(rows, "safety_left_reanchor_offset_norm_mm") + _collect_numeric(
+        rows,
+        "safety_right_reanchor_offset_norm_mm",
+    )
+    reanchor_gap_values = _collect_numeric(rows, "safety_left_reanchor_gap_ms") + _collect_numeric(
+        rows,
+        "safety_right_reanchor_gap_ms",
+    )
+    clamp_streak_values = _collect_numeric(rows, "safety_left_clamp_streak_ms") + _collect_numeric(
+        rows,
+        "safety_right_clamp_streak_ms",
+    )
+
+    _print_stats("safety_clamp_distance_mm", clamp_distance_values)
+    _print_stats("safety_raw_to_safe_error_mm", raw_to_safe_values)
+    _print_stats("safety_reanchor_offset_norm_mm", reanchor_offset_values)
+    _print_stats("safety_reanchor_gap_ms", reanchor_gap_values)
+    _print_stats("safety_clamp_streak_ms", clamp_streak_values)
+
+
 def _print_state_count_table(rows: list[dict[str, Any]]) -> None:
     counter: Counter[str] = Counter()
     for row in rows:
@@ -517,6 +608,7 @@ def _summarize_main_subset(
     )
     print(f"top left reasons: {left_reasons.most_common(5)}")
     print(f"top right reasons: {right_reasons.most_common(5)}")
+    _summarize_safety_fields(rows)
 
     _print_stats_no_p50("read_feedback_ms", _collect_numeric(rows, "read_feedback_ms"))
     _print_stats_no_p50("send_command_ms", _collect_numeric(rows, "send_command_ms"))

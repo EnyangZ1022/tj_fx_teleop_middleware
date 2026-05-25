@@ -144,6 +144,8 @@ class FullTeleopApp:
         else:
             self.coordinate_transformer = PositionOnlyCoordinateTransformer()
         self.safety_gate = safety_gate if safety_gate is not None else TargetSafetyGate(self.safety_config)
+        if hasattr(self.safety_gate, "set_teleop_mode"):
+            self.safety_gate.set_teleop_mode(self.config.teleop_mode)
         self.target_buffer = target_buffer if target_buffer is not None else TargetBuffer()
         self.scheduler = (
             scheduler
@@ -229,6 +231,8 @@ class FullTeleopApp:
                         startup_config=self.robot_startup_config,
                     )
                     startup.move_to_ready_pose(dry_run=bool(self.config.dry_run))
+                    if hasattr(self.safety_gate, "reset_reacquire_offsets"):
+                        self.safety_gate.reset_reacquire_offsets()
 
                 if self.command_adapter is None:
                     self.command_adapter = RobotCommandAdapter(
@@ -260,6 +264,11 @@ class FullTeleopApp:
                     "pico_prediction_max_frame_age_ms": float(self.config.pico_prediction_max_frame_age_ms),
                     "pico_velocity_filter_beta": float(self.config.pico_velocity_filter_beta),
                     "pico_max_predicted_step_mm": float(self.config.pico_max_predicted_step_mm),
+                    "safety_target_limit_mode": str(self.safety_config.target_limit_mode),
+                    "safety_reacquire_mode": str(self.safety_config.reacquire_mode),
+                    "safety_reacquire_after_ms": float(self.safety_config.reacquire_after_ms),
+                    "safety_reacquire_error_mm": float(self.safety_config.reacquire_error_mm),
+                    "safety_clamp_error_reanchor_ms": float(self.safety_config.clamp_error_reanchor_ms),
                     "ik_reference_mode": str(self.robot_command_config.ik_reference_mode),
                     "joint_ramp_profile": str(self.robot_command_config.joint_ramp_profile),
                     "max_joint_step_deg": float(self.robot_command_config.max_joint_step_deg),
@@ -416,6 +425,8 @@ class FullTeleopApp:
                 teleop_frame=actual_teleop_frame,
                 side=calibration_side,
             )
+            if hasattr(self.safety_gate, "reset_reacquire_offsets"):
+                self.safety_gate.reset_reacquire_offsets()
 
             self.logger.log_event(
                 "calibration_requested",
@@ -428,6 +439,9 @@ class FullTeleopApp:
 
         robot_target = self._build_robot_target(teleop_frame, feedback)
         self._refresh_orientation_debug_state()
+
+        if hasattr(self.safety_gate, "set_teleop_mode"):
+            self.safety_gate.set_teleop_mode(self.config.teleop_mode)
 
         if robot_target is not None:
             for side in ("left", "right"):
@@ -630,6 +644,15 @@ class FullTeleopApp:
             payload={
                 "frame_id": int(teleop_frame.frame_id) if teleop_frame is not None else None,
                 "safety_state": str(decision.state.value),
+                "safety_reason": str(decision.global_reason),
+                "safety_left_reason": str(decision.left_reason),
+                "safety_right_reason": str(decision.right_reason),
+                "safety_target_limit_mode": str(decision.safety_target_limit_mode),
+                "safety_reacquire_mode": str(decision.safety_reacquire_mode),
+                "safety_left_clamped": bool(decision.left_clamped),
+                "safety_right_clamped": bool(decision.right_clamped),
+                "safety_left_reanchored": bool(decision.left_reanchored),
+                "safety_right_reanchored": bool(decision.right_reanchored),
                 "allow_motion": bool(decision.allow_motion),
                 "command_ready": bool(command_target is not None),
                 "teleop_mode": str(self.config.teleop_mode),
@@ -879,6 +902,30 @@ class FullTeleopApp:
             "safety_reason": str(decision.global_reason),
             "safety_left_reason": str(decision.left_reason),
             "safety_right_reason": str(decision.right_reason),
+            "safety_target_limit_mode": str(decision.safety_target_limit_mode),
+            "safety_reacquire_mode": str(decision.safety_reacquire_mode),
+            "safety_left_clamped": bool(decision.left_clamped),
+            "safety_right_clamped": bool(decision.right_clamped),
+            "safety_left_clamp_reason": str(decision.left_clamp_reason),
+            "safety_right_clamp_reason": str(decision.right_clamp_reason),
+            "safety_left_raw_distance_mm": decision.left_raw_distance_mm,
+            "safety_right_raw_distance_mm": decision.right_raw_distance_mm,
+            "safety_left_allowed_distance_mm": decision.left_allowed_distance_mm,
+            "safety_right_allowed_distance_mm": decision.right_allowed_distance_mm,
+            "safety_left_clamp_distance_mm": decision.left_clamp_distance_mm,
+            "safety_right_clamp_distance_mm": decision.right_clamp_distance_mm,
+            "safety_left_raw_to_safe_error_mm": decision.left_raw_to_safe_error_mm,
+            "safety_right_raw_to_safe_error_mm": decision.right_raw_to_safe_error_mm,
+            "safety_left_reanchored": bool(decision.left_reanchored),
+            "safety_right_reanchored": bool(decision.right_reanchored),
+            "safety_left_reanchor_reason": str(decision.left_reanchor_reason),
+            "safety_right_reanchor_reason": str(decision.right_reanchor_reason),
+            "safety_left_reanchor_gap_ms": decision.left_reanchor_gap_ms,
+            "safety_right_reanchor_gap_ms": decision.right_reanchor_gap_ms,
+            "safety_left_reanchor_offset_norm_mm": decision.left_reanchor_offset_norm_mm,
+            "safety_right_reanchor_offset_norm_mm": decision.right_reanchor_offset_norm_mm,
+            "safety_left_clamp_streak_ms": decision.left_clamp_streak_ms,
+            "safety_right_clamp_streak_ms": decision.right_clamp_streak_ms,
             "feedback_available": bool(feedback is not None),
             "scheduler_dt_ms": float(diagnostics.dt_ms),
             "scheduler_target_age_ms": diagnostics.target_age_ms,

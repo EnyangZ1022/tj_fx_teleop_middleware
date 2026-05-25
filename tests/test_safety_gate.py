@@ -122,6 +122,17 @@ def test_disconnected_when_frame_is_stale() -> None:
     assert decision.global_reason == "pico_timeout"
 
 
+def test_disconnected_when_frame_is_stale_even_in_clamp_mode() -> None:
+    gate = TargetSafetyGate(SafetyConfig(pico_timeout_ms=100.0, target_limit_mode="clamp"))
+    frame = _teleop_frame(pc_receive_time_ns=1_000_000_000)
+
+    decision = gate.evaluate(frame, None, None, now_ns=1_250_000_001)
+
+    assert decision.state == SafetyState.DISCONNECTED
+    assert decision.allow_motion is False
+    assert decision.global_reason == "pico_timeout"
+
+
 def test_wait_calibration_when_pose_valid_but_not_calibrated() -> None:
     gate = TargetSafetyGate()
     frame = _teleop_frame(pc_receive_time_ns=1_000_000_000)
@@ -330,6 +341,170 @@ def test_velocity_limit_enters_paused_and_blocks_motion() -> None:
     assert decision_fast.allow_motion is False
     assert decision_fast.left_reason == "velocity_limit"
     assert decision_fast.right_reason == "velocity_limit"
+
+
+def test_target_jump_clamp_mode_keeps_motion_active_with_clamped_target() -> None:
+    gate = TargetSafetyGate(
+        SafetyConfig(
+            max_single_step_mm=50.0,
+            max_velocity_mm_s=10_000.0,
+            target_limit_mode="clamp",
+        )
+    )
+    frame = _teleop_frame(pc_receive_time_ns=1_000_000_000)
+    calibration = _calibration()
+
+    first = gate.evaluate(
+        frame,
+        _target(left=_arm_target(0.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+        calibration,
+        now_ns=1_000_000_100,
+    )
+    assert first.allow_motion is True
+
+    clamped = gate.evaluate(
+        frame,
+        _target(left=_arm_target(100.0, 0.0, 0.0), right=_arm_target(100.0, 0.0, 0.0)),
+        calibration,
+        now_ns=1_100_000_100,
+    )
+
+    assert clamped.state == SafetyState.TELEOP_ACTIVE
+    assert clamped.allow_motion is True
+    assert clamped.left_reason == "target_jump_clamped"
+    assert clamped.right_reason == "target_jump_clamped"
+    assert clamped.left_clamped is True
+    assert clamped.right_clamped is True
+    assert clamped.safe_target is not None
+    assert clamped.safe_target.left is not None
+    assert clamped.safe_target.right is not None
+    assert clamped.safe_target.left.position_xyz[0] == 50.0
+    assert clamped.safe_target.right.position_xyz[0] == 50.0
+
+
+def test_velocity_limit_clamp_mode_clamps_by_velocity_distance() -> None:
+    gate = TargetSafetyGate(
+        SafetyConfig(
+            max_single_step_mm=1_000.0,
+            max_velocity_mm_s=200.0,
+            target_limit_mode="clamp",
+        )
+    )
+    frame = _teleop_frame(pc_receive_time_ns=1_000_000_000)
+    calibration = _calibration()
+
+    first = gate.evaluate(
+        frame,
+        _target(left=_arm_target(0.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+        calibration,
+        now_ns=1_000_000_100,
+    )
+    assert first.allow_motion is True
+
+    clamped = gate.evaluate(
+        frame,
+        _target(left=_arm_target(60.0, 0.0, 0.0), right=_arm_target(60.0, 0.0, 0.0)),
+        calibration,
+        now_ns=1_050_000_100,
+    )
+
+    # 0.05 s * 200 mm/s = 10 mm allowed by velocity.
+    assert clamped.state == SafetyState.TELEOP_ACTIVE
+    assert clamped.allow_motion is True
+    assert clamped.left_reason == "velocity_limit_clamped"
+    assert clamped.right_reason == "velocity_limit_clamped"
+    assert clamped.safe_target is not None
+    assert clamped.safe_target.left is not None
+    assert clamped.safe_target.left.position_xyz[0] == 10.0
+
+
+def test_reacquire_position_offset_after_long_reject_gap() -> None:
+    gate = TargetSafetyGate(
+        SafetyConfig(
+            max_single_step_mm=50.0,
+            max_velocity_mm_s=10_000.0,
+            target_limit_mode="reject",
+            reacquire_mode="position_offset",
+            reacquire_after_ms=1000.0,
+            reacquire_error_mm=100.0,
+        )
+    )
+    calibration = _calibration()
+
+    first_now_ns = 1_000_000_100
+    first = gate.evaluate(
+        _teleop_frame(pc_receive_time_ns=first_now_ns),
+        _target(left=_arm_target(0.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+        calibration,
+        now_ns=first_now_ns,
+    )
+    assert first.allow_motion is True
+
+    rejected_now_ns = 1_100_000_100
+    rejected = gate.evaluate(
+        _teleop_frame(pc_receive_time_ns=rejected_now_ns),
+        _target(left=_arm_target(200.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+        calibration,
+        now_ns=rejected_now_ns,
+    )
+    assert rejected.allow_motion is True
+    assert rejected.left_reason == "target_jump"
+
+    reacquired_now_ns = 2_300_000_100
+    reacquired = gate.evaluate(
+        _teleop_frame(pc_receive_time_ns=reacquired_now_ns),
+        _target(left=_arm_target(210.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+        calibration,
+        now_ns=reacquired_now_ns,
+    )
+
+    assert reacquired.state == SafetyState.TELEOP_ACTIVE
+    assert reacquired.left_reanchored is True
+    assert reacquired.left_reanchor_reason == "reanchored_after_gap"
+    assert reacquired.safe_target is not None
+    assert reacquired.safe_target.left is not None
+    assert reacquired.safe_target.left.position_xyz[0] == 0.0
+    assert reacquired.safe_target.left.orientation_abc == (10.0, 20.0, 30.0)
+
+
+def test_reacquire_position_offset_after_long_clamp_saturation() -> None:
+    gate = TargetSafetyGate(
+        SafetyConfig(
+            max_single_step_mm=50.0,
+            max_velocity_mm_s=10_000.0,
+            target_limit_mode="clamp",
+            reacquire_mode="position_offset",
+            reacquire_after_ms=1000.0,
+            reacquire_error_mm=100.0,
+            clamp_error_reanchor_ms=1000.0,
+        )
+    )
+    calibration = _calibration()
+
+    first_now_ns = 1_000_000_100
+    first = gate.evaluate(
+        _teleop_frame(pc_receive_time_ns=first_now_ns),
+        _target(left=_arm_target(0.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+        calibration,
+        now_ns=first_now_ns,
+    )
+    assert first.allow_motion is True
+
+    saw_reanchor = False
+    for idx in range(15):
+        now_ns = 1_100_000_100 + idx * 100_000_000
+        decision = gate.evaluate(
+            _teleop_frame(pc_receive_time_ns=now_ns),
+            _target(left=_arm_target(5000.0, 0.0, 0.0), right=_arm_target(0.0, 0.0, 0.0)),
+            calibration,
+            now_ns=now_ns,
+        )
+        if decision.left_reanchored:
+            saw_reanchor = True
+            assert decision.left_reanchor_reason == "reanchored_after_clamp_saturation"
+            break
+
+    assert saw_reanchor is True
 
 
 def test_emergency_stop_blocks_until_cleared() -> None:

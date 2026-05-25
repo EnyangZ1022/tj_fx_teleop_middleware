@@ -151,6 +151,27 @@ def test_safety_config_uses_mm_field_names_and_defaults() -> None:
 
     assert cfg.max_single_step_mm == 50.0
     assert cfg.max_velocity_mm_s == 500.0
+    assert cfg.target_limit_mode == "reject"
+    assert cfg.reacquire_mode == "none"
+    assert cfg.reacquire_after_ms == 1000.0
+    assert cfg.reacquire_error_mm == 150.0
+    assert cfg.clamp_error_reanchor_ms == 1000.0
+
+
+def test_safety_config_accepts_patch_d_modes() -> None:
+    cfg = SafetyConfig(
+        target_limit_mode="clamp",
+        reacquire_mode="position_offset",
+        reacquire_after_ms=1200.0,
+        reacquire_error_mm=180.0,
+        clamp_error_reanchor_ms=900.0,
+    )
+
+    assert cfg.target_limit_mode == "clamp"
+    assert cfg.reacquire_mode == "position_offset"
+    assert cfg.reacquire_after_ms == 1200.0
+    assert cfg.reacquire_error_mm == 180.0
+    assert cfg.clamp_error_reanchor_ms == 900.0
 
 
 def test_safety_gate_step_limits_use_millimeters() -> None:

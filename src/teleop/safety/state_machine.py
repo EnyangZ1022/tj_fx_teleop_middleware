@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from teleop.core.robot_frame import DualArmRobotTarget
+from teleop.core.robot_frame import DualArmRobotTarget, RobotArmTarget
 
 
 class SafetyState(str, Enum):
@@ -25,6 +25,11 @@ class SafetyEvent(str, Enum):
     ENABLE_RELEASED = "enable_released"
     TARGET_JUMP = "target_jump"
     VELOCITY_LIMIT = "velocity_limit"
+    TARGET_JUMP_CLAMPED = "target_jump_clamped"
+    VELOCITY_LIMIT_CLAMPED = "velocity_limit_clamped"
+    TARGET_AND_VELOCITY_CLAMPED = "target_and_velocity_clamped"
+    REANCHORED_AFTER_GAP = "reanchored_after_gap"
+    REANCHORED_AFTER_CLAMP_SATURATION = "reanchored_after_clamp_saturation"
     TARGET_INVALID = "target_invalid"
     EMERGENCY_STOP = "emergency_stop"
     ERROR_ACTIVE = "error_active"
@@ -40,6 +45,18 @@ class ArmSafetyStatus:
     pose_valid: bool
     enable: bool
     calibrated: bool
+    safe_target: RobotArmTarget | None = None
+    clamped: bool = False
+    clamp_reason: str = ""
+    raw_distance_mm: float | None = None
+    allowed_distance_mm: float | None = None
+    clamp_distance_mm: float | None = None
+    raw_to_safe_error_mm: float | None = None
+    reanchored: bool = False
+    reanchor_reason: str = ""
+    reanchor_gap_ms: float | None = None
+    reanchor_offset_norm_mm: float | None = None
+    clamp_streak_ms: float | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +69,30 @@ class SafetyDecision:
     right_reason: str
     global_reason: str
     safe_target: DualArmRobotTarget | None
+    safety_target_limit_mode: str = "reject"
+    safety_reacquire_mode: str = "none"
+    left_clamped: bool = False
+    right_clamped: bool = False
+    left_clamp_reason: str = ""
+    right_clamp_reason: str = ""
+    left_raw_distance_mm: float | None = None
+    right_raw_distance_mm: float | None = None
+    left_allowed_distance_mm: float | None = None
+    right_allowed_distance_mm: float | None = None
+    left_clamp_distance_mm: float | None = None
+    right_clamp_distance_mm: float | None = None
+    left_raw_to_safe_error_mm: float | None = None
+    right_raw_to_safe_error_mm: float | None = None
+    left_reanchored: bool = False
+    right_reanchored: bool = False
+    left_reanchor_reason: str = ""
+    right_reanchor_reason: str = ""
+    left_reanchor_gap_ms: float | None = None
+    right_reanchor_gap_ms: float | None = None
+    left_reanchor_offset_norm_mm: float | None = None
+    right_reanchor_offset_norm_mm: float | None = None
+    left_clamp_streak_ms: float | None = None
+    right_clamp_streak_ms: float | None = None
 
 
 class TeleopSafetyStateMachine:

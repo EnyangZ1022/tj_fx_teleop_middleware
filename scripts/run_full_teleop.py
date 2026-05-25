@@ -19,6 +19,7 @@ from teleop.core.teleop_mode import TeleopMode
 from teleop.filtering import OrientationFilterConfig
 from teleop.logging import LoggingConfig
 from teleop.robot import RobotCommandConfig
+from teleop.safety import SafetyConfig
 from teleop.transform.orientation_transform import OrientationTrackingConfig
 from teleop.ui.snapshot import LatestSnapshotStore
 from teleop.ui.ui_config import UIConfig
@@ -162,6 +163,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["reject", "ramp"],
         default="reject",
         help="Unified joint limit handling mode (reject default, ramp experimental)",
+    )
+    parser.add_argument(
+        "--safety-target-limit-mode",
+        choices=["reject", "clamp"],
+        default="reject",
+        help="Safety target limit mode: reject (default) or clamp for target_jump/velocity_limit",
+    )
+    parser.add_argument(
+        "--safety-reacquire-mode",
+        choices=["none", "position_offset"],
+        default="none",
+        help="Safety reacquire mode: none (default) or position_offset after long invalid/reject windows",
+    )
+    parser.add_argument(
+        "--safety-reacquire-after-ms",
+        type=float,
+        default=1000.0,
+        help="Re-anchor trigger gap in ms for safety-reacquire-mode position_offset",
+    )
+    parser.add_argument(
+        "--safety-reacquire-error-mm",
+        type=float,
+        default=150.0,
+        help="Minimum raw-vs-last-safe position error in mm required to trigger re-anchor",
+    )
+    parser.add_argument(
+        "--safety-clamp-error-reanchor-ms",
+        type=float,
+        default=1000.0,
+        help="Clamp saturation duration in ms before position-offset re-anchor is retried",
     )
     parser.add_argument(
         "--ik-reference-mode",
@@ -403,6 +434,16 @@ def _build_robot_command_config(args: argparse.Namespace) -> RobotCommandConfig:
     return RobotCommandConfig(**overrides)
 
 
+def _build_safety_config(args: argparse.Namespace) -> SafetyConfig:
+    return SafetyConfig(
+        target_limit_mode=str(args.safety_target_limit_mode),
+        reacquire_mode=str(args.safety_reacquire_mode),
+        reacquire_after_ms=float(args.safety_reacquire_after_ms),
+        reacquire_error_mm=float(args.safety_reacquire_error_mm),
+        clamp_error_reanchor_ms=float(args.safety_clamp_error_reanchor_ms),
+    )
+
+
 def _validate_runtime_args(args: argparse.Namespace) -> str | None:
     if bool(args.enable_orientation_filter) and bool(args.disable_orientation_filter):
         return "--enable-orientation-filter and --disable-orientation-filter cannot be used together"
@@ -434,6 +475,15 @@ def _validate_runtime_args(args: argparse.Namespace) -> str | None:
 
     if args.max_joint_velocity_deg_s is not None and float(args.max_joint_velocity_deg_s) <= 0.0:
         return "--max-joint-velocity-deg-s must be > 0"
+
+    if float(args.safety_reacquire_after_ms) <= 0.0:
+        return "--safety-reacquire-after-ms must be > 0"
+
+    if float(args.safety_reacquire_error_mm) <= 0.0:
+        return "--safety-reacquire-error-mm must be > 0"
+
+    if float(args.safety_clamp_error_reanchor_ms) <= 0.0:
+        return "--safety-clamp-error-reanchor-ms must be > 0"
 
     if float(args.pico_extrapolation_horizon_ms) <= 0.0:
         return "--pico-extrapolation-horizon-ms must be > 0"
@@ -477,6 +527,7 @@ def main() -> int:
     ):
         app_config = _build_app_config(args)
         robot_command_config = _build_robot_command_config(args)
+        safety_config = _build_safety_config(args)
         logging_config = _build_logging_config(args)
 
         print(f"Control mode: {app_config.control_mode}")
@@ -484,6 +535,11 @@ def main() -> int:
         print(f"logging_mode: {logging_mode}")
         print(f"command_rate_hz: {float(args.rate_hz):.3f}")
         print(f"joint_limit_mode: {robot_command_config.joint_limit_mode}")
+        print(f"safety_target_limit_mode: {safety_config.target_limit_mode}")
+        print(f"safety_reacquire_mode: {safety_config.reacquire_mode}")
+        print(f"safety_reacquire_after_ms: {float(safety_config.reacquire_after_ms):.1f}")
+        print(f"safety_reacquire_error_mm: {float(safety_config.reacquire_error_mm):.1f}")
+        print(f"safety_clamp_error_reanchor_ms: {float(safety_config.clamp_error_reanchor_ms):.1f}")
         print(f"ik_reference_mode: {robot_command_config.ik_reference_mode}")
         print(f"joint_ramp_profile: {robot_command_config.joint_ramp_profile}")
         print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
@@ -532,6 +588,7 @@ def main() -> int:
 
         app = FullTeleopApp(
             config=app_config,
+            safety_config=safety_config,
             robot_command_config=robot_command_config,
             logging_config=logging_config,
             ui_config=ui_config,

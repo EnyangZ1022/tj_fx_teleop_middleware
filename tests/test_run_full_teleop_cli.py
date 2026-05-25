@@ -37,6 +37,11 @@ def test_cli_default_is_position_only() -> None:
     assert args.pico_prediction_max_frame_age_ms == 50.0
     assert args.pico_velocity_filter_beta == 0.5
     assert args.pico_max_predicted_step_mm == 5.0
+    assert args.safety_target_limit_mode == "reject"
+    assert args.safety_reacquire_mode == "none"
+    assert args.safety_reacquire_after_ms == 1000.0
+    assert args.safety_reacquire_error_mm == 150.0
+    assert args.safety_clamp_error_reanchor_ms == 1000.0
     assert cfg.spin_threshold_s == 0.0005
     assert cfg.pico_resample_mode == "latest"
     assert cfg.pico_extrapolation_horizon_ms == 15.0
@@ -47,6 +52,32 @@ def test_cli_default_is_position_only() -> None:
     assert cfg.logging_enabled is False
     assert logging_cfg.enabled is False
     assert logging_cfg.logging_mode == "off"
+
+
+def test_cli_safety_flags_propagate_to_safety_config() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(
+        [
+            "--safety-target-limit-mode",
+            "clamp",
+            "--safety-reacquire-mode",
+            "position_offset",
+            "--safety-reacquire-after-ms",
+            "1200",
+            "--safety-reacquire-error-mm",
+            "175",
+            "--safety-clamp-error-reanchor-ms",
+            "900",
+        ]
+    )
+    safety_cfg = module._build_safety_config(args)
+
+    assert safety_cfg.target_limit_mode == "clamp"
+    assert safety_cfg.reacquire_mode == "position_offset"
+    assert safety_cfg.reacquire_after_ms == 1200.0
+    assert safety_cfg.reacquire_error_mm == 175.0
+    assert safety_cfg.clamp_error_reanchor_ms == 900.0
 
 
 def test_cli_predictive_resample_flags_propagate_to_config() -> None:
@@ -349,6 +380,33 @@ def test_validate_runtime_args_rejects_non_positive_max_joint_velocity_deg_s() -
     message = module._validate_runtime_args(args)
 
     assert message == "--max-joint-velocity-deg-s must be > 0"
+
+
+def test_validate_runtime_args_rejects_non_positive_safety_reacquire_after_ms() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--safety-reacquire-after-ms", "0"])
+    message = module._validate_runtime_args(args)
+
+    assert message == "--safety-reacquire-after-ms must be > 0"
+
+
+def test_validate_runtime_args_rejects_non_positive_safety_reacquire_error_mm() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--safety-reacquire-error-mm", "0"])
+    message = module._validate_runtime_args(args)
+
+    assert message == "--safety-reacquire-error-mm must be > 0"
+
+
+def test_validate_runtime_args_rejects_non_positive_safety_clamp_error_reanchor_ms() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--safety-clamp-error-reanchor-ms", "0"])
+    message = module._validate_runtime_args(args)
+
+    assert message == "--safety-clamp-error-reanchor-ms must be > 0"
 
 
 def test_validate_runtime_args_rejects_non_positive_pico_horizon() -> None:

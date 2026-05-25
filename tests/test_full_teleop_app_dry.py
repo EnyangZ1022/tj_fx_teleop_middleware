@@ -12,6 +12,7 @@ from teleop.core.robot_frame import DualArmRobotFeedback, RobotArmFeedback
 from teleop.core.teleop_frame import TeleopArmInput, TeleopFrame
 from teleop.filtering import OrientationFilterConfig
 from teleop.logging import LoggingConfig
+from teleop.safety import SafetyConfig, TargetSafetyGate
 from teleop.transform.coordinate_transform import PositionOrientationCoordinateTransformer
 from teleop.transform.orientation_transform import OrientationTrackingConfig
 from teleop.app.full_teleop_app import sleep_until
@@ -203,6 +204,16 @@ class _SpyLogger:
         return _Stats()
 
 
+class _CountingSafetyGate(TargetSafetyGate):
+    def __init__(self, config: SafetyConfig | None = None):
+        super().__init__(config=config)
+        self.reacquire_reset_calls = 0
+
+    def reset_reacquire_offsets(self) -> None:
+        self.reacquire_reset_calls += 1
+        super().reset_reacquire_offsets()
+
+
 def test_app_no_command_send_without_calibration() -> None:
     cfg = FullTeleopAppConfig(connect_pico=True, connect_robot=True, dry_run=True, enable_send=False)
     provider = _FakeTeleopProvider([
@@ -387,10 +398,36 @@ def test_timing_logging_mode_emits_lightweight_timing_record() -> None:
         "max_joint_step_deg",
         "max_joint_velocity_deg_s",
         "nominal_allowed_step_deg",
+        "safety_target_limit_mode",
+        "safety_reacquire_mode",
+        "safety_left_clamped",
+        "safety_right_clamped",
+        "safety_left_clamp_reason",
+        "safety_right_clamp_reason",
+        "safety_left_raw_distance_mm",
+        "safety_right_raw_distance_mm",
+        "safety_left_allowed_distance_mm",
+        "safety_right_allowed_distance_mm",
+        "safety_left_clamp_distance_mm",
+        "safety_right_clamp_distance_mm",
+        "safety_left_raw_to_safe_error_mm",
+        "safety_right_raw_to_safe_error_mm",
+        "safety_left_reanchored",
+        "safety_right_reanchored",
+        "safety_left_reanchor_reason",
+        "safety_right_reanchor_reason",
+        "safety_left_reanchor_gap_ms",
+        "safety_right_reanchor_gap_ms",
+        "safety_left_reanchor_offset_norm_mm",
+        "safety_right_reanchor_offset_norm_mm",
+        "safety_left_clamp_streak_ms",
+        "safety_right_clamp_streak_ms",
     }
     assert required_keys.issubset(set(timing_payload.keys()))
     assert timing_payload.get("ik_reference_mode") == "fixed"
     assert timing_payload.get("joint_ramp_profile") == "manual"
+    assert timing_payload.get("safety_target_limit_mode") == "reject"
+    assert timing_payload.get("safety_reacquire_mode") == "none"
 
     forbidden_keys = {
         "pico_left_xyz_m",
@@ -424,6 +461,37 @@ def test_app_command_config_uses_control_mode_and_rate() -> None:
 
     assert app.robot_command_config.control_mode == "joint_impedance"
     assert app.robot_command_config.ctrl_hz == 50
+
+
+def test_axis_click_calibration_resets_safety_reacquire_offsets() -> None:
+    cfg = FullTeleopAppConfig(connect_pico=True, connect_robot=True, dry_run=True, enable_send=False)
+    provider = _FakeTeleopProvider(
+        [
+            _frame(frame_id=1, now_ns=1_000_000_000, left_axis_click=False, right_axis_click=False),
+            _frame(frame_id=2, now_ns=1_020_000_000, left_axis_click=True, right_axis_click=False),
+            _frame(frame_id=3, now_ns=1_040_000_000, left_axis_click=False, right_axis_click=False),
+        ]
+    )
+    sdk = _FakeSDKAdapter()
+    cmd = _FakeCommandAdapter(dry_run=True)
+    safety_gate = _CountingSafetyGate(
+        SafetyConfig(target_limit_mode="clamp", reacquire_mode="position_offset")
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        sdk_adapter=sdk,
+        command_adapter=cmd,
+        safety_gate=safety_gate,
+    )
+    app.initialize()
+    app.step_once(1_010_000_000)
+    app.step_once(1_030_000_000)
+    app.step_once(1_050_000_000)
+    app.shutdown()
+
+    assert safety_gate.reacquire_reset_calls >= 1
 
 
 def test_timing_logging_reports_receiver_seq_delta_and_skipped_frames() -> None:
