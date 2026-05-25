@@ -4,6 +4,8 @@ import importlib.util
 from pathlib import Path
 import time
 
+import pytest
+
 from teleop.app import FullTeleopApp, FullTeleopAppConfig
 from teleop.core.pose import Pose7
 from teleop.core.robot_frame import DualArmRobotFeedback, RobotArmFeedback
@@ -354,6 +356,16 @@ def test_timing_logging_mode_emits_lightweight_timing_record() -> None:
         "pico_receiver_seq",
         "pico_receiver_seq_delta",
         "pico_skipped_receiver_frames",
+        "pico_resample_mode",
+        "pico_prediction_used",
+        "pico_prediction_h_ms",
+        "pico_prediction_clamped",
+        "pico_prediction_frame_age_ms",
+        "pico_prediction_reason",
+        "latest_left_input_speed_mm_s",
+        "latest_right_input_speed_mm_s",
+        "predicted_left_pos_step_mm",
+        "predicted_right_pos_step_mm",
         "read_pico_ms",
         "read_feedback_ms",
         "calibration_update_ms",
@@ -441,6 +453,108 @@ def test_timing_logging_reports_receiver_seq_delta_and_skipped_frames() -> None:
     assert payload.get("pico_receiver_seq") == 102
     assert payload.get("pico_receiver_seq_delta") == 2
     assert payload.get("pico_skipped_receiver_frames") == 1
+
+
+def test_predictive_resample_emits_prediction_metadata_and_clamp() -> None:
+    cfg = FullTeleopAppConfig(
+        connect_pico=True,
+        connect_robot=False,
+        dry_run=True,
+        logging_enabled=True,
+        pico_resample_mode="predictive",
+        pico_extrapolation_horizon_ms=15.0,
+        pico_prediction_max_frame_age_ms=50.0,
+        pico_velocity_filter_beta=1.0,
+        pico_max_predicted_step_mm=5.0,
+    )
+    provider = _FakeTeleopProvider(
+        [
+            _frame(frame_id=1, now_ns=1_000_000_000, left_xyz=(0.0, 0.0, 0.0), right_xyz=(0.0, 0.0, 0.0), receiver_seq=100),
+            _frame(frame_id=2, now_ns=1_010_000_000, left_xyz=(0.01, 0.0, 0.0), right_xyz=(0.01, 0.0, 0.0), receiver_seq=101),
+        ]
+    )
+    spy_logger = _SpyLogger()
+    logging_cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="timing",
+        record_events=False,
+        record_frames=False,
+        record_performance=False,
+        record_timing=True,
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        logging_config=logging_cfg,
+        logger=spy_logger,
+    )
+
+    app.initialize()
+    app.step_once(1_005_000_000, deadline_late_ms=0.0)
+    app.step_once(1_015_000_000, deadline_late_ms=0.0)
+    app.step_once(1_025_000_000, deadline_late_ms=0.0)
+    app.shutdown()
+
+    assert len(spy_logger.timing) >= 3
+    _, payload = spy_logger.timing[-1]
+    assert payload is not None
+    assert payload.get("pico_resample_mode") == "predictive"
+    assert payload.get("pico_prediction_used") is True
+    assert payload.get("pico_prediction_clamped") is True
+    assert payload.get("pico_prediction_reason") == "step_clamped"
+    assert payload.get("predicted_left_pos_step_mm") == pytest.approx(5.0, abs=1e-6)
+    assert payload.get("predicted_right_pos_step_mm") == pytest.approx(5.0, abs=1e-6)
+
+
+def test_predictive_resample_resets_after_calibration() -> None:
+    cfg = FullTeleopAppConfig(
+        connect_pico=True,
+        connect_robot=True,
+        dry_run=True,
+        enable_send=False,
+        logging_enabled=True,
+        pico_resample_mode="predictive",
+        pico_velocity_filter_beta=1.0,
+    )
+    provider = _FakeTeleopProvider(
+        [
+            _frame(frame_id=1, now_ns=1_000_000_000, left_axis_click=False, right_axis_click=False, receiver_seq=200),
+            _frame(frame_id=2, now_ns=1_010_000_000, left_axis_click=True, right_axis_click=True, receiver_seq=201),
+        ]
+    )
+    sdk = _FakeSDKAdapter()
+    cmd = _FakeCommandAdapter(dry_run=True)
+    spy_logger = _SpyLogger()
+    logging_cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="timing",
+        record_events=False,
+        record_frames=False,
+        record_performance=False,
+        record_timing=True,
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        sdk_adapter=sdk,
+        command_adapter=cmd,
+        logging_config=logging_cfg,
+        logger=spy_logger,
+    )
+
+    app.initialize()
+    app.step_once(1_005_000_000, deadline_late_ms=0.0)
+    app.step_once(1_015_000_000, deadline_late_ms=0.0)
+    app.step_once(1_025_000_000, deadline_late_ms=0.0)
+    app.shutdown()
+
+    assert len(spy_logger.timing) >= 3
+    _, payload = spy_logger.timing[-1]
+    assert payload is not None
+    assert payload.get("pico_prediction_used") is False
+    assert payload.get("pico_prediction_reason") == "no_previous_frame"
 
 
 def test_run_full_teleop_script_importable_without_side_effects() -> None:

@@ -12,6 +12,7 @@ from teleop.core.teleop_mode import TeleopMode
 from teleop.core.robot_frame import DualArmRobotFeedback, DualArmRobotTarget
 from teleop.core.teleop_frame import TeleopFrame
 from teleop.input.pico_mapping import PicoInputMapper
+from teleop.input.pico_resampler import PicoCausalResampler, PicoResamplerConfig
 from teleop.input.pico_provider import PicoProvider
 from teleop.input.teleop_provider import TeleopProvider
 from teleop.logging import AsyncSessionLogger, LoggingConfig, NullSessionLogger
@@ -169,6 +170,15 @@ class FullTeleopApp:
 
         self._previous_teleop_frame: TeleopFrame | None = None
         self._calibration_state: DualArmCalibrationState | None = None
+        self._pico_resampler = PicoCausalResampler(
+            PicoResamplerConfig(
+                mode=str(config.pico_resample_mode),
+                extrapolation_horizon_ms=float(config.pico_extrapolation_horizon_ms),
+                prediction_max_frame_age_ms=float(config.pico_prediction_max_frame_age_ms),
+                velocity_filter_beta=float(config.pico_velocity_filter_beta),
+                max_predicted_step_mm=float(config.pico_max_predicted_step_mm),
+            )
+        )
 
         self._latest_feedback: DualArmRobotFeedback | None = None
         self._latest_target: DualArmRobotTarget | None = None
@@ -245,6 +255,11 @@ class FullTeleopApp:
                     "ui_enabled": bool(self.ui_config.enabled),
                     "logging_enabled": bool(self.logging_config.enabled),
                     "logging_mode": str(self.logging_config.logging_mode),
+                    "pico_resample_mode": str(self.config.pico_resample_mode),
+                    "pico_extrapolation_horizon_ms": float(self.config.pico_extrapolation_horizon_ms),
+                    "pico_prediction_max_frame_age_ms": float(self.config.pico_prediction_max_frame_age_ms),
+                    "pico_velocity_filter_beta": float(self.config.pico_velocity_filter_beta),
+                    "pico_max_predicted_step_mm": float(self.config.pico_max_predicted_step_mm),
                     "teleop_mode": str(self.config.teleop_mode),
                     "orientation_tracking_enabled": bool(self.config.orientation_tracking.enabled),
                     "orientation_algorithm": str(self.config.orientation_tracking.orientation_algorithm),
@@ -329,10 +344,12 @@ class FullTeleopApp:
 
         self.logger.stop()
         self._reset_orientation_filter_runtime()
+        self._pico_resampler.reset()
         self._last_loop_perf_ns = None
         self._last_pico_pc_receive_ns = None
         self._last_pico_source_timestamp_ns = None
         self._last_seen_receiver_seq = None
+        self._previous_teleop_frame = None
         self._initialized = False
 
     def step_once(self, now_ns: int, *, deadline_late_ms: float | None = None) -> None:
@@ -345,42 +362,54 @@ class FullTeleopApp:
             loop_dt_ms = max(0.0, float(loop_perf_ns - self._last_loop_perf_ns) / 1_000_000.0)
         self._last_loop_perf_ns = loop_perf_ns
 
-        teleop_frame = self._read_teleop_frame()
+        actual_teleop_frame = self._read_teleop_frame()
+        if self._is_deadman_released(self._previous_teleop_frame, actual_teleop_frame):
+            self._pico_resampler.reset()
+
+        resampler_result = self._pico_resampler.process(
+            latest_actual_frame=actual_teleop_frame,
+            now_ns=curr_ns,
+            teleop_mode=self.config.teleop_mode,
+        )
+        teleop_frame = resampler_result.frame
         perf_after_read_pico_ns = time.perf_counter_ns()
 
         feedback = self._read_robot_feedback()
         perf_after_feedback_ns = time.perf_counter_ns()
 
-        if teleop_frame is not None and self._previous_teleop_frame is None:
+        if actual_teleop_frame is not None and self._previous_teleop_frame is None:
             # Reset filter memory when teleop stream starts/restarts to avoid stale state.
             self._reset_orientation_filter_runtime()
 
         calibration_side = self.config.single_arm_mode
         calibration_requested = False
-        if teleop_frame is not None:
+        if actual_teleop_frame is not None:
             calibration_requested = detect_axis_click_calibration_request(
                 self._previous_teleop_frame,
-                teleop_frame,
+                actual_teleop_frame,
                 side=calibration_side,
             )
 
-        if calibration_requested and teleop_frame is not None and feedback is not None:
+        if calibration_requested:
+            self._pico_resampler.reset()
+
+        if calibration_requested and actual_teleop_frame is not None and feedback is not None:
             if self._calibration_state is None:
                 self._calibration_state = self.coordinate_transformer.create_calibration(
-                    teleop_frame,
+                    actual_teleop_frame,
                     feedback,
                     side=calibration_side,
                 )
             else:
                 self._calibration_state = self.coordinate_transformer.update_calibration(
                     self._calibration_state,
-                    teleop_frame,
+                    actual_teleop_frame,
                     feedback,
                     side=calibration_side,
                 )
 
             self._reset_orientation_filter_on_calibration(
-                teleop_frame=teleop_frame,
+                teleop_frame=actual_teleop_frame,
                 side=calibration_side,
             )
 
@@ -388,7 +417,7 @@ class FullTeleopApp:
                 "calibration_requested",
                 payload={
                     "side": calibration_side or "both",
-                    "frame_id": int(teleop_frame.frame_id),
+                    "frame_id": int(actual_teleop_frame.frame_id),
                 },
             )
         perf_after_calibration_ns = time.perf_counter_ns()
@@ -419,6 +448,13 @@ class FullTeleopApp:
             now_ns=curr_ns,
         )
 
+        if (
+            self._latest_decision is not None
+            and self._latest_decision.state == SafetyState.TELEOP_ACTIVE
+            and decision.state != SafetyState.TELEOP_ACTIVE
+        ):
+            self._pico_resampler.reset()
+
         if decision.safe_target is not None and decision.allow_motion:
             self.target_buffer.update(decision.safe_target, timestamp_ns=curr_ns)
         else:
@@ -446,9 +482,13 @@ class FullTeleopApp:
         )
         perf_after_snapshot_ns = time.perf_counter_ns()
 
-        frame_id = int(teleop_frame.frame_id) if teleop_frame is not None else None
+        frame_id = int(actual_teleop_frame.frame_id) if actual_teleop_frame is not None else None
         prev_frame_id = int(self._previous_teleop_frame.frame_id) if self._previous_teleop_frame is not None else None
-        receiver_seq = int(teleop_frame.receiver_seq) if teleop_frame is not None and teleop_frame.receiver_seq is not None else None
+        receiver_seq = (
+            int(actual_teleop_frame.receiver_seq)
+            if actual_teleop_frame is not None and actual_teleop_frame.receiver_seq is not None
+            else None
+        )
 
         pico_frame_new: bool | None = None
         if frame_id is not None:
@@ -466,15 +506,15 @@ class FullTeleopApp:
         pico_pc_rx_dt_ms: float | None = None
         pico_internal_dt_ms: float | None = None
 
-        if teleop_frame is not None:
-            pc_receive_ns = int(teleop_frame.pc_receive_time_ns)
+        if actual_teleop_frame is not None:
+            pc_receive_ns = int(actual_teleop_frame.pc_receive_time_ns)
             if pc_receive_ns > 0:
                 frame_age_ms = max(0.0, float(curr_ns - pc_receive_ns) / 1_000_000.0)
                 if self._last_pico_pc_receive_ns is not None:
                     pico_pc_rx_dt_ms = max(0.0, float(pc_receive_ns - self._last_pico_pc_receive_ns) / 1_000_000.0)
                 self._last_pico_pc_receive_ns = pc_receive_ns
 
-            source_timestamp_ns = int(teleop_frame.source_timestamp_ns)
+            source_timestamp_ns = int(actual_teleop_frame.source_timestamp_ns)
             if source_timestamp_ns > 0:
                 if self._last_pico_source_timestamp_ns is not None:
                     pico_internal_dt_ms = max(
@@ -483,12 +523,15 @@ class FullTeleopApp:
                     )
                 self._last_pico_source_timestamp_ns = source_timestamp_ns
 
+        if frame_age_ms is not None and frame_age_ms > float(self.safety_config.pico_timeout_ms):
+            self._pico_resampler.reset()
+
         self._latest_feedback = feedback
         self._latest_target = robot_target
         self._latest_decision = decision
         self._latest_diagnostics = diagnostics
         self._latest_command_result = command_result
-        self._previous_teleop_frame = teleop_frame
+        self._previous_teleop_frame = actual_teleop_frame
 
         left_pose = teleop_frame.left.pose_pico if teleop_frame is not None else None
         right_pose = teleop_frame.right.pose_pico if teleop_frame is not None else None
@@ -524,6 +567,16 @@ class FullTeleopApp:
                 receiver_seq=receiver_seq,
                 pico_receiver_seq_delta=pico_receiver_seq_delta,
                 pico_skipped_receiver_frames=pico_skipped_receiver_frames,
+                pico_resample_mode=resampler_result.mode,
+                pico_prediction_used=resampler_result.prediction_used,
+                pico_prediction_h_ms=resampler_result.prediction_h_ms,
+                pico_prediction_clamped=resampler_result.prediction_clamped,
+                pico_prediction_frame_age_ms=resampler_result.prediction_frame_age_ms,
+                pico_prediction_reason=resampler_result.prediction_reason,
+                latest_left_input_speed_mm_s=resampler_result.latest_left_input_speed_mm_s,
+                latest_right_input_speed_mm_s=resampler_result.latest_right_input_speed_mm_s,
+                predicted_left_pos_step_mm=resampler_result.predicted_left_pos_step_mm,
+                predicted_right_pos_step_mm=resampler_result.predicted_right_pos_step_mm,
                 frame_age_ms=frame_age_ms,
                 pico_pc_rx_dt_ms=pico_pc_rx_dt_ms,
                 pico_internal_dt_ms=pico_internal_dt_ms,
@@ -682,6 +735,16 @@ class FullTeleopApp:
         receiver_seq: int | None,
         pico_receiver_seq_delta: int | None,
         pico_skipped_receiver_frames: int | None,
+        pico_resample_mode: str,
+        pico_prediction_used: bool,
+        pico_prediction_h_ms: float | None,
+        pico_prediction_clamped: bool,
+        pico_prediction_frame_age_ms: float | None,
+        pico_prediction_reason: str,
+        latest_left_input_speed_mm_s: float | None,
+        latest_right_input_speed_mm_s: float | None,
+        predicted_left_pos_step_mm: float | None,
+        predicted_right_pos_step_mm: float | None,
         frame_age_ms: float | None,
         pico_pc_rx_dt_ms: float | None,
         pico_internal_dt_ms: float | None,
@@ -723,6 +786,16 @@ class FullTeleopApp:
             "pico_receiver_seq": receiver_seq,
             "pico_receiver_seq_delta": pico_receiver_seq_delta,
             "pico_skipped_receiver_frames": pico_skipped_receiver_frames,
+            "pico_resample_mode": str(pico_resample_mode),
+            "pico_prediction_used": bool(pico_prediction_used),
+            "pico_prediction_h_ms": pico_prediction_h_ms,
+            "pico_prediction_clamped": bool(pico_prediction_clamped),
+            "pico_prediction_frame_age_ms": pico_prediction_frame_age_ms,
+            "pico_prediction_reason": str(pico_prediction_reason),
+            "latest_left_input_speed_mm_s": latest_left_input_speed_mm_s,
+            "latest_right_input_speed_mm_s": latest_right_input_speed_mm_s,
+            "predicted_left_pos_step_mm": predicted_left_pos_step_mm,
+            "predicted_right_pos_step_mm": predicted_right_pos_step_mm,
             "frame_age_ms": frame_age_ms,
             "pico_pc_rx_dt_ms": pico_pc_rx_dt_ms,
             "pico_internal_dt_ms": pico_internal_dt_ms,
@@ -767,6 +840,23 @@ class FullTeleopApp:
 
     def request_stop(self) -> None:
         self._running = False
+
+    def _teleop_enable_active(self, frame: TeleopFrame | None) -> bool:
+        if frame is None:
+            return False
+
+        if self.config.single_arm_mode == "left":
+            return bool(frame.left.enable)
+        if self.config.single_arm_mode == "right":
+            return bool(frame.right.enable)
+        return bool(frame.left.enable or frame.right.enable)
+
+    def _is_deadman_released(
+        self,
+        previous_frame: TeleopFrame | None,
+        current_frame: TeleopFrame | None,
+    ) -> bool:
+        return self._teleop_enable_active(previous_frame) and not self._teleop_enable_active(current_frame)
 
     def _read_teleop_frame(self) -> TeleopFrame | None:
         if not self.config.connect_pico or self.teleop_provider is None:

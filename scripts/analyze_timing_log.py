@@ -365,6 +365,82 @@ def _rows_for_state(rows: list[dict[str, Any]], state: str) -> list[dict[str, An
     return selected
 
 
+def _summarize_predictive_fields(rows: list[dict[str, Any]]) -> None:
+    mode_counts: Counter[str] = Counter()
+    for row in rows:
+        mode = _as_str(row.get("pico_resample_mode"))
+        if mode is not None and mode != "":
+            mode_counts[mode] += 1
+
+    if mode_counts:
+        print(f"pico_resample_mode counts: {mode_counts.most_common()}")
+    else:
+        print("pico_resample_mode counts: N/A")
+
+    prediction_used_true = 0
+    prediction_used_false = 0
+    for row in rows:
+        used_value = _as_bool(row.get("pico_prediction_used"))
+        if used_value is True:
+            prediction_used_true += 1
+        elif used_value is False:
+            prediction_used_false += 1
+
+    prediction_used_known = prediction_used_true + prediction_used_false
+    prediction_used_ratio = (
+        float(prediction_used_true) / float(prediction_used_known)
+        if prediction_used_known > 0
+        else None
+    )
+    print(
+        "prediction_used: "
+        f"true={prediction_used_true}, false={prediction_used_false}, ratio={_fmt(prediction_used_ratio, digits=4)}"
+    )
+
+    _print_stats("pico_prediction_h_ms", _collect_numeric(rows, "pico_prediction_h_ms"))
+    _print_stats_no_p50(
+        "pico_prediction_frame_age_ms",
+        _collect_numeric(rows, "pico_prediction_frame_age_ms"),
+    )
+
+    reason_counts: Counter[str] = Counter()
+    for row in rows:
+        reason = _as_str(row.get("pico_prediction_reason"))
+        if reason is not None and reason != "":
+            reason_counts[reason] += 1
+
+    if reason_counts:
+        print(f"prediction reasons: {reason_counts.most_common(8)}")
+    else:
+        print("prediction reasons: N/A")
+
+    prediction_clamped_true = 0
+    prediction_clamped_false = 0
+    for row in rows:
+        clamped_value = _as_bool(row.get("pico_prediction_clamped"))
+        if clamped_value is True:
+            prediction_clamped_true += 1
+        elif clamped_value is False:
+            prediction_clamped_false += 1
+
+    prediction_clamped_known = prediction_clamped_true + prediction_clamped_false
+    prediction_clamped_ratio = (
+        float(prediction_clamped_true) / float(prediction_clamped_known)
+        if prediction_clamped_known > 0
+        else None
+    )
+    print(
+        "prediction_clamped: "
+        f"true={prediction_clamped_true}, false={prediction_clamped_false}, "
+        f"ratio={_fmt(prediction_clamped_ratio, digits=4)}"
+    )
+
+    _print_stats("latest_left_input_speed_mm_s", _collect_numeric(rows, "latest_left_input_speed_mm_s"))
+    _print_stats("latest_right_input_speed_mm_s", _collect_numeric(rows, "latest_right_input_speed_mm_s"))
+    _print_stats("predicted_left_pos_step_mm", _collect_numeric(rows, "predicted_left_pos_step_mm"))
+    _print_stats("predicted_right_pos_step_mm", _collect_numeric(rows, "predicted_right_pos_step_mm"))
+
+
 def _print_state_count_table(rows: list[dict[str, Any]]) -> None:
     counter: Counter[str] = Counter()
     for row in rows:
@@ -546,6 +622,8 @@ def _summarize_main_subset(
         "effective_receiver_seq_hz_seen_by_main: "
         f"{_fmt(effective_receiver_seq_hz_seen_by_main)}"
     )
+
+    _summarize_predictive_fields(rows)
 
     gap_time_field = _pick_time_field(rows, ("loop_wall_ns", "loop_perf_ns"))
     pico_new_gaps: list[float] = []

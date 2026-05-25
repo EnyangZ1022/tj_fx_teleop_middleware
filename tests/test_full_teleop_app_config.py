@@ -80,11 +80,31 @@ def test_default_app_config_safe_defaults() -> None:
     assert cfg.orientation_filter.tau_s == 0.02
     assert cfg.orientation_filter.fallback_dt_s == 0.01
     assert cfg.spin_threshold_s == 0.0005
+    assert cfg.pico_resample_mode == "latest"
+    assert cfg.pico_extrapolation_horizon_ms == 15.0
+    assert cfg.pico_prediction_max_frame_age_ms == 50.0
+    assert cfg.pico_velocity_filter_beta == 0.5
+    assert cfg.pico_max_predicted_step_mm == 5.0
 
 
 def test_negative_spin_threshold_raises() -> None:
     with pytest.raises(ValueError):
         FullTeleopAppConfig(spin_threshold_s=-0.0001)
+
+
+def test_invalid_pico_resample_mode_raises() -> None:
+    with pytest.raises(ValueError):
+        FullTeleopAppConfig(pico_resample_mode="invalid")
+
+
+def test_invalid_pico_velocity_filter_beta_raises() -> None:
+    with pytest.raises(ValueError):
+        FullTeleopAppConfig(pico_velocity_filter_beta=1.2)
+
+
+def test_non_positive_pico_max_predicted_step_mm_raises() -> None:
+    with pytest.raises(ValueError):
+        FullTeleopAppConfig(pico_max_predicted_step_mm=0.0)
 
 
 def test_position_orientation_mode_enables_orientation_tracking() -> None:

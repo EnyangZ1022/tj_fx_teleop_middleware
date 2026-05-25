@@ -9,6 +9,7 @@ from teleop.transform.orientation_transform import OrientationTrackingConfig
 
 _ALLOWED_SINGLE_ARM_MODES = {None, "left", "right"}
 _ALLOWED_CONTROL_MODES = {"joint_position", "joint_impedance"}
+_ALLOWED_PICO_RESAMPLE_MODES = {"latest", "predictive"}
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,11 @@ class FullTeleopAppConfig:
     orientation_tracking: OrientationTrackingConfig = field(default_factory=OrientationTrackingConfig)
     orientation_filter: OrientationFilterConfig = field(default_factory=OrientationFilterConfig)
     single_arm_mode: str | None = None
+    pico_resample_mode: str = "latest"
+    pico_extrapolation_horizon_ms: float = 15.0
+    pico_prediction_max_frame_age_ms: float = 50.0
+    pico_velocity_filter_beta: float = 0.5
+    pico_max_predicted_step_mm: float = 5.0
     max_runtime_s: float | None = None
     startup_wait_s: float = 2.0
 
@@ -41,6 +47,14 @@ class FullTeleopAppConfig:
         if mode not in _ALLOWED_SINGLE_ARM_MODES:
             raise ValueError("single_arm_mode must be one of: None, 'left', 'right'")
         object.__setattr__(self, "single_arm_mode", mode)
+
+        pico_resample_mode = str(self.pico_resample_mode).strip().lower()
+        if pico_resample_mode not in _ALLOWED_PICO_RESAMPLE_MODES:
+            raise ValueError(
+                f"pico_resample_mode must be one of {sorted(_ALLOWED_PICO_RESAMPLE_MODES)}, "
+                f"got {self.pico_resample_mode!r}"
+            )
+        object.__setattr__(self, "pico_resample_mode", pico_resample_mode)
 
         teleop_mode = normalize_teleop_mode(self.teleop_mode)
         object.__setattr__(self, "teleop_mode", teleop_mode)
@@ -75,6 +89,15 @@ class FullTeleopAppConfig:
             raise ValueError("command_rate_hz must be positive")
         if float(self.spin_threshold_s) < 0.0:
             raise ValueError("spin_threshold_s must be >= 0")
+        if float(self.pico_extrapolation_horizon_ms) <= 0.0:
+            raise ValueError("pico_extrapolation_horizon_ms must be > 0")
+        if float(self.pico_prediction_max_frame_age_ms) <= 0.0:
+            raise ValueError("pico_prediction_max_frame_age_ms must be > 0")
+        beta = float(self.pico_velocity_filter_beta)
+        if beta < 0.0 or beta > 1.0:
+            raise ValueError("pico_velocity_filter_beta must be within [0, 1]")
+        if float(self.pico_max_predicted_step_mm) <= 0.0:
+            raise ValueError("pico_max_predicted_step_mm must be > 0")
         if self.max_runtime_s is not None and float(self.max_runtime_s) <= 0.0:
             raise ValueError("max_runtime_s must be positive when provided")
         if float(self.startup_wait_s) < 0.0:

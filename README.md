@@ -286,6 +286,27 @@ Notes:
 - Dual-arm feedback reads both sides from one SDK `subscribe` call per loop.
 - Dual-arm command send batches into one SDK packet (`clear_set` -> `set_joint_cmd_pose` x N -> `send_cmd`).
 
+### Optional Pico causal predictive resampler (default off)
+
+By default, Pico input uses latest-frame hold:
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --pico-resample-mode latest
+```
+
+Predictive mode is optional and low-latency. It performs short-horizon causal position extrapolation only (no future-frame interpolation, no fixed delay):
+
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --pico-resample-mode predictive --pico-extrapolation-horizon-ms 15 --pico-prediction-max-frame-age-ms 50 --pico-velocity-filter-beta 0.5 --pico-max-predicted-step-mm 5
+```
+
+Notes:
+
+- default mode is `--pico-resample-mode latest` and keeps existing behavior.
+- predictive mode never overwrites the real Pico receive timestamp used by stale checks.
+- predictive mode predicts controller position only; orientation and discrete button/trigger/grip states are latest-hold.
+- safety gate behavior is unchanged and still applies stale timeout and motion checks.
+
 ### Optional Windows high-resolution timer
 
 On Windows, command loop timing can be affected by system timer granularity.

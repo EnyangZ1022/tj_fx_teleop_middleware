@@ -191,6 +191,36 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Set 0 to disable spin and use pure sleep."
         ),
     )
+    parser.add_argument(
+        "--pico-resample-mode",
+        choices=["latest", "predictive"],
+        default="latest",
+        help="Pico input resample mode: latest (default passthrough) or predictive (causal short-horizon extrapolation)",
+    )
+    parser.add_argument(
+        "--pico-extrapolation-horizon-ms",
+        type=float,
+        default=15.0,
+        help="Maximum causal extrapolation horizon in ms for predictive resampling",
+    )
+    parser.add_argument(
+        "--pico-prediction-max-frame-age-ms",
+        type=float,
+        default=50.0,
+        help="Maximum frame age in ms allowed for predictive extrapolation",
+    )
+    parser.add_argument(
+        "--pico-velocity-filter-beta",
+        type=float,
+        default=0.5,
+        help="Velocity EMA filter beta in [0, 1] used by predictive Pico resampling",
+    )
+    parser.add_argument(
+        "--pico-max-predicted-step-mm",
+        type=float,
+        default=5.0,
+        help="Per-cycle maximum predicted Pico position step in mm",
+    )
     parser.add_argument("--rate-hz", type=float, default=100.0, help="Command scheduler rate in Hz")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both", help="Single-arm mode")
     parser.add_argument("--max-runtime-s", type=float, default=None, help="Optional runtime cap in seconds")
@@ -267,6 +297,11 @@ def _build_app_config(args: argparse.Namespace) -> FullTeleopAppConfig:
         ui_enabled=bool(args.ui),
         logging_enabled=(_resolve_logging_mode(args) != "off"),
         teleop_mode=teleop_mode,
+        pico_resample_mode=str(args.pico_resample_mode),
+        pico_extrapolation_horizon_ms=float(args.pico_extrapolation_horizon_ms),
+        pico_prediction_max_frame_age_ms=float(args.pico_prediction_max_frame_age_ms),
+        pico_velocity_filter_beta=float(args.pico_velocity_filter_beta),
+        pico_max_predicted_step_mm=float(args.pico_max_predicted_step_mm),
         orientation_tracking=orientation_tracking,
         orientation_filter=orientation_filter,
         control_mode=str(args.control_mode),
@@ -363,6 +398,19 @@ def _validate_runtime_args(args: argparse.Namespace) -> str | None:
     if args.max_joint_velocity_deg_s is not None and float(args.max_joint_velocity_deg_s) <= 0.0:
         return "--max-joint-velocity-deg-s must be > 0"
 
+    if float(args.pico_extrapolation_horizon_ms) <= 0.0:
+        return "--pico-extrapolation-horizon-ms must be > 0"
+
+    if float(args.pico_prediction_max_frame_age_ms) <= 0.0:
+        return "--pico-prediction-max-frame-age-ms must be > 0"
+
+    beta = float(args.pico_velocity_filter_beta)
+    if beta < 0.0 or beta > 1.0:
+        return "--pico-velocity-filter-beta must be within [0, 1]"
+
+    if float(args.pico_max_predicted_step_mm) <= 0.0:
+        return "--pico-max-predicted-step-mm must be > 0"
+
     return None
 
 
@@ -401,6 +449,14 @@ def main() -> int:
         print(f"max_joint_step_deg: {float(robot_command_config.max_joint_step_deg):.3f}")
         print(f"max_joint_velocity_deg_s: {float(robot_command_config.max_joint_velocity_deg_s):.3f}")
         print(f"spin_threshold_ms: {float(args.spin_threshold_ms):.3f}")
+        print(f"pico_resample_mode: {app_config.pico_resample_mode}")
+        if app_config.pico_resample_mode == "predictive":
+            print(f"pico_extrapolation_horizon_ms: {float(app_config.pico_extrapolation_horizon_ms):.3f}")
+            print(
+                f"pico_prediction_max_frame_age_ms: {float(app_config.pico_prediction_max_frame_age_ms):.3f}"
+            )
+            print(f"pico_velocity_filter_beta: {float(app_config.pico_velocity_filter_beta):.3f}")
+            print(f"pico_max_predicted_step_mm: {float(app_config.pico_max_predicted_step_mm):.3f}")
         print(f"win_high_res_timer: {'enabled' if bool(args.enable_win_high_res_timer) else 'disabled'}")
         print(f"win_high_res_timer_ms: {int(args.win_high_res_timer_ms)}")
         if app_config.teleop_mode == TeleopMode.POSITION_ORIENTATION.value:

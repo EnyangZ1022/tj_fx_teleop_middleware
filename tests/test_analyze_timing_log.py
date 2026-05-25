@@ -113,6 +113,9 @@ def test_default_prints_all_and_active_summary(tmp_path: Path, capsys) -> None:
     assert "Main Timing Summary: TELEOP_ACTIVE" in output
     assert "pico_receiver_seq_delta" in output
     assert "skipped receiver frames" in output
+    assert "pico_resample_mode counts" in output
+    assert "prediction_used" in output
+    assert "prediction reasons" in output
 
 
 def test_state_filter_prints_only_selected_subset(tmp_path: Path, capsys) -> None:
@@ -213,3 +216,73 @@ def test_receiver_input_prints_receiver_summary_and_comparison(tmp_path: Path, c
     output = capsys.readouterr().out
     assert "Receiver Timing Summary" in output
     assert "Active Window Comparison" in output
+
+
+def test_predictive_fields_summary_when_present(tmp_path: Path, capsys) -> None:
+    module = _load_analyze_module()
+
+    timing_path = tmp_path / "teleop_timing.jsonl"
+    records = [
+        _timing_record(
+            {
+                "loop_wall_ns": 1_000_000_000,
+                "loop_perf_ns": 100,
+                "loop_dt_ms": 10.0,
+                "loop_total_ms": 1.0,
+                "deadline_late_ms": 0.2,
+                "safety_state": "TELEOP_ACTIVE",
+                "pico_frame_new": True,
+                "left_sent": True,
+                "right_sent": True,
+                "left_reason": "sent",
+                "right_reason": "sent",
+                "pico_resample_mode": "predictive",
+                "pico_prediction_used": False,
+                "pico_prediction_clamped": False,
+                "pico_prediction_reason": "new_frame",
+            },
+            1_000_000_000,
+        ),
+        _timing_record(
+            {
+                "loop_wall_ns": 1_010_000_000,
+                "loop_perf_ns": 200,
+                "loop_dt_ms": 10.0,
+                "loop_total_ms": 1.2,
+                "deadline_late_ms": 0.1,
+                "safety_state": "TELEOP_ACTIVE",
+                "pico_frame_new": False,
+                "left_sent": False,
+                "right_sent": False,
+                "left_reason": "not_sent",
+                "right_reason": "not_sent",
+                "pico_resample_mode": "predictive",
+                "pico_prediction_used": True,
+                "pico_prediction_h_ms": 8.0,
+                "pico_prediction_clamped": True,
+                "pico_prediction_frame_age_ms": 12.0,
+                "pico_prediction_reason": "step_clamped",
+                "latest_left_input_speed_mm_s": 900.0,
+                "latest_right_input_speed_mm_s": 910.0,
+                "predicted_left_pos_step_mm": 5.0,
+                "predicted_right_pos_step_mm": 5.0,
+            },
+            1_010_000_000,
+        ),
+    ]
+    _write_jsonl(timing_path, records)
+
+    old_argv = list(sys.argv)
+    try:
+        sys.argv = ["analyze_timing_log.py", "--input", str(timing_path)]
+        module.main()
+    finally:
+        sys.argv = old_argv
+
+    output = capsys.readouterr().out
+    assert "pico_resample_mode counts" in output
+    assert "prediction_used" in output
+    assert "pico_prediction_h_ms" in output
+    assert "pico_prediction_frame_age_ms" in output
+    assert "prediction reasons" in output
+    assert "prediction_clamped" in output

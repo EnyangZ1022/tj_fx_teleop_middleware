@@ -32,11 +32,47 @@ def test_cli_default_is_position_only() -> None:
     assert args.enable_win_high_res_timer is False
     assert args.win_high_res_timer_ms == 1
     assert args.spin_threshold_ms == 0.5
+    assert args.pico_resample_mode == "latest"
+    assert args.pico_extrapolation_horizon_ms == 15.0
+    assert args.pico_prediction_max_frame_age_ms == 50.0
+    assert args.pico_velocity_filter_beta == 0.5
+    assert args.pico_max_predicted_step_mm == 5.0
     assert cfg.spin_threshold_s == 0.0005
+    assert cfg.pico_resample_mode == "latest"
+    assert cfg.pico_extrapolation_horizon_ms == 15.0
+    assert cfg.pico_prediction_max_frame_age_ms == 50.0
+    assert cfg.pico_velocity_filter_beta == 0.5
+    assert cfg.pico_max_predicted_step_mm == 5.0
     assert module._resolve_logging_mode(args) == "off"
     assert cfg.logging_enabled is False
     assert logging_cfg.enabled is False
     assert logging_cfg.logging_mode == "off"
+
+
+def test_cli_predictive_resample_flags_propagate_to_config() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(
+        [
+            "--pico-resample-mode",
+            "predictive",
+            "--pico-extrapolation-horizon-ms",
+            "20",
+            "--pico-prediction-max-frame-age-ms",
+            "60",
+            "--pico-velocity-filter-beta",
+            "0.25",
+            "--pico-max-predicted-step-mm",
+            "3.5",
+        ]
+    )
+    cfg = module._build_app_config(args)
+
+    assert cfg.pico_resample_mode == "predictive"
+    assert cfg.pico_extrapolation_horizon_ms == 20.0
+    assert cfg.pico_prediction_max_frame_age_ms == 60.0
+    assert cfg.pico_velocity_filter_beta == 0.25
+    assert cfg.pico_max_predicted_step_mm == 3.5
 
 
 def test_cli_legacy_logging_flag_maps_to_full_mode() -> None:
@@ -239,6 +275,24 @@ def test_validate_runtime_args_rejects_non_positive_max_joint_velocity_deg_s() -
     message = module._validate_runtime_args(args)
 
     assert message == "--max-joint-velocity-deg-s must be > 0"
+
+
+def test_validate_runtime_args_rejects_non_positive_pico_horizon() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--pico-extrapolation-horizon-ms", "0"])
+    message = module._validate_runtime_args(args)
+
+    assert message == "--pico-extrapolation-horizon-ms must be > 0"
+
+
+def test_validate_runtime_args_rejects_invalid_pico_velocity_filter_beta() -> None:
+    module = _load_run_full_teleop_module()
+
+    args = module.parse_args(["--pico-velocity-filter-beta", "1.5"])
+    message = module._validate_runtime_args(args)
+
+    assert message == "--pico-velocity-filter-beta must be within [0, 1]"
 
 
 def test_cli_rejects_legacy_joint_step_limit_mode_flag() -> None:
