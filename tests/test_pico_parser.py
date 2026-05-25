@@ -88,3 +88,7 @@ def test_pico_receiver_emits_receiver_timing_payload() -> None:
     assert isinstance(payload.get("parse_duration_ms"), float)
     assert float(payload["parse_duration_ms"]) >= 0.0
     assert isinstance(payload.get("json_size_bytes"), int)
+
+    latest = receiver.get_latest_frame()
+    assert latest is not None
+    assert latest.receiver_seq == 1

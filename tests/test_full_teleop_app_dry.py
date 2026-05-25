@@ -43,6 +43,7 @@ def _frame(
     grip: float = 0.9,
     left_axis_click: bool = False,
     right_axis_click: bool = False,
+    receiver_seq: int | None = None,
 ) -> TeleopFrame:
     return TeleopFrame(
         frame_id=frame_id,
@@ -54,6 +55,7 @@ def _frame(
         start_pause_requested=False,
         cancel_requested=False,
         calibration_requested=False,
+        receiver_seq=receiver_seq,
     )
 
 
@@ -349,6 +351,9 @@ def test_timing_logging_mode_emits_lightweight_timing_record() -> None:
         "loop_total_ms",
         "deadline_late_ms",
         "overrun",
+        "pico_receiver_seq",
+        "pico_receiver_seq_delta",
+        "pico_skipped_receiver_frames",
         "read_pico_ms",
         "read_feedback_ms",
         "calibration_update_ms",
@@ -398,6 +403,44 @@ def test_app_command_config_uses_control_mode_and_rate() -> None:
 
     assert app.robot_command_config.control_mode == "joint_impedance"
     assert app.robot_command_config.ctrl_hz == 50
+
+
+def test_timing_logging_reports_receiver_seq_delta_and_skipped_frames() -> None:
+    cfg = FullTeleopAppConfig(connect_pico=True, connect_robot=False, dry_run=True, logging_enabled=True)
+    provider = _FakeTeleopProvider(
+        [
+            _frame(frame_id=1, now_ns=1_000_000_000, receiver_seq=100),
+            _frame(frame_id=2, now_ns=1_010_000_000, receiver_seq=102),
+        ]
+    )
+    spy_logger = _SpyLogger()
+    logging_cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="timing",
+        record_events=False,
+        record_frames=False,
+        record_performance=False,
+        record_timing=True,
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        logging_config=logging_cfg,
+        logger=spy_logger,
+    )
+
+    app.initialize()
+    app.step_once(1_005_000_000, deadline_late_ms=0.0)
+    app.step_once(1_015_000_000, deadline_late_ms=0.0)
+    app.shutdown()
+
+    assert len(spy_logger.timing) >= 2
+    _, payload = spy_logger.timing[-1]
+    assert payload is not None
+    assert payload.get("pico_receiver_seq") == 102
+    assert payload.get("pico_receiver_seq_delta") == 2
+    assert payload.get("pico_skipped_receiver_frames") == 1
 
 
 def test_run_full_teleop_script_importable_without_side_effects() -> None:

@@ -400,17 +400,16 @@ class PicoReceiver:
 
         callback = None
         receiver_timing_callback = None
-        receiver_seq = 0
+        receiver_seq: int | None = None
         frame_seq: int | None = None
         pico_source_timestamp_ns: int | None = None
 
         with self._lock:
-            self._receiver_seq += 1
-            receiver_seq = int(self._receiver_seq)
-
             if frame is not None:
+                self._receiver_seq += 1
+                receiver_seq = int(self._receiver_seq)
                 self._frame_id += 1
-                frame = replace(frame, frame_id=self._frame_id)
+                frame = replace(frame, frame_id=self._frame_id, receiver_seq=receiver_seq)
                 self._latest_frame = frame
                 frame_seq = int(frame.frame_id)
                 pico_source_timestamp_ns = int(frame.pico_timestamp_ns)

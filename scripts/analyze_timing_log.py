@@ -475,6 +475,78 @@ def _summarize_main_subset(
         f"ratio={_fmt(pico_new_ratio, digits=4)}, effective_pico_new_frame_hz={_fmt(effective_pico_new_hz)}"
     )
 
+    receiver_seq_delta_values = _collect_numeric(rows, "pico_receiver_seq_delta")
+    _print_stats("pico_receiver_seq_delta", receiver_seq_delta_values)
+
+    total_skipped_frames = 0
+    rows_with_skipped_frames = 0
+    for row in rows:
+        skipped_value = _as_int(row.get("pico_skipped_receiver_frames"))
+        if skipped_value is None:
+            continue
+        total_skipped_frames += max(0, int(skipped_value))
+        if skipped_value > 0:
+            rows_with_skipped_frames += 1
+
+    skipped_rows_ratio = float(rows_with_skipped_frames) / float(len(rows)) if rows else 0.0
+    skipped_frames_per_second = (
+        float(total_skipped_frames) / float(duration_s)
+        if duration_s is not None and duration_s > 0.0
+        else None
+    )
+    print(
+        "skipped receiver frames: "
+        f"total_pico_skipped_receiver_frames={total_skipped_frames}, "
+        f"rows_with_skipped_receiver_frames={rows_with_skipped_frames}, "
+        f"skipped_rows_ratio={skipped_rows_ratio:.3%}, "
+        f"skipped_frames_per_second={_fmt(skipped_frames_per_second)}"
+    )
+
+    receiver_delta_distribution = {
+        "delta==0": 0,
+        "delta==1": 0,
+        "delta==2": 0,
+        "delta==3": 0,
+        "delta>=4": 0,
+    }
+    receiver_delta_known_count = 0
+    for row in rows:
+        delta_value = _as_int(row.get("pico_receiver_seq_delta"))
+        if delta_value is None:
+            continue
+        receiver_delta_known_count += 1
+        if delta_value == 0:
+            receiver_delta_distribution["delta==0"] += 1
+        elif delta_value == 1:
+            receiver_delta_distribution["delta==1"] += 1
+        elif delta_value == 2:
+            receiver_delta_distribution["delta==2"] += 1
+        elif delta_value == 3:
+            receiver_delta_distribution["delta==3"] += 1
+        elif delta_value >= 4:
+            receiver_delta_distribution["delta>=4"] += 1
+
+    if receiver_delta_known_count == 0:
+        print("receiver_seq_delta distribution: N/A")
+    else:
+        print(
+            "receiver_seq_delta distribution: "
+            + ", ".join(
+                f"{key}={value}" for key, value in receiver_delta_distribution.items()
+            )
+        )
+
+    receiver_seq_values = _collect_ints(rows, "pico_receiver_seq")
+    effective_receiver_seq_hz_seen_by_main: float | None = None
+    if receiver_seq_values and duration_s is not None and duration_s > 0.0:
+        receiver_seq_range = max(receiver_seq_values) - min(receiver_seq_values)
+        if receiver_seq_range >= 0:
+            effective_receiver_seq_hz_seen_by_main = float(receiver_seq_range) / float(duration_s)
+    print(
+        "effective_receiver_seq_hz_seen_by_main: "
+        f"{_fmt(effective_receiver_seq_hz_seen_by_main)}"
+    )
+
     gap_time_field = _pick_time_field(rows, ("loop_wall_ns", "loop_perf_ns"))
     pico_new_gaps: list[float] = []
     if gap_time_field is not None:

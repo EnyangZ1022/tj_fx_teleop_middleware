@@ -111,6 +111,8 @@ def test_default_prints_all_and_active_summary(tmp_path: Path, capsys) -> None:
     output = capsys.readouterr().out
     assert "Main Timing Summary: all_rows" in output
     assert "Main Timing Summary: TELEOP_ACTIVE" in output
+    assert "pico_receiver_seq_delta" in output
+    assert "skipped receiver frames" in output
 
 
 def test_state_filter_prints_only_selected_subset(tmp_path: Path, capsys) -> None:

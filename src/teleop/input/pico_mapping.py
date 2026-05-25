@@ -53,6 +53,7 @@ class PicoInputMapper:
             start_pause_requested=start_pause_requested,
             cancel_requested=cancel_requested,
             calibration_requested=calibration_requested,
+            receiver_seq=frame.receiver_seq,
         )
 
     def _map_arm(self, side: str, ctrl: PicoControllerState, valid: bool) -> TeleopArmInput:

@@ -183,6 +183,7 @@ class FullTeleopApp:
         self._last_loop_perf_ns: int | None = None
         self._last_pico_pc_receive_ns: int | None = None
         self._last_pico_source_timestamp_ns: int | None = None
+        self._last_seen_receiver_seq: int | None = None
 
     @property
     def calibration_state(self) -> DualArmCalibrationState | None:
@@ -331,6 +332,7 @@ class FullTeleopApp:
         self._last_loop_perf_ns = None
         self._last_pico_pc_receive_ns = None
         self._last_pico_source_timestamp_ns = None
+        self._last_seen_receiver_seq = None
         self._initialized = False
 
     def step_once(self, now_ns: int, *, deadline_late_ms: float | None = None) -> None:
@@ -446,10 +448,19 @@ class FullTeleopApp:
 
         frame_id = int(teleop_frame.frame_id) if teleop_frame is not None else None
         prev_frame_id = int(self._previous_teleop_frame.frame_id) if self._previous_teleop_frame is not None else None
+        receiver_seq = int(teleop_frame.receiver_seq) if teleop_frame is not None and teleop_frame.receiver_seq is not None else None
 
         pico_frame_new: bool | None = None
         if frame_id is not None:
             pico_frame_new = bool(prev_frame_id is None or frame_id != prev_frame_id)
+
+        pico_receiver_seq_delta: int | None = None
+        pico_skipped_receiver_frames: int | None = None
+        if receiver_seq is not None and self._last_seen_receiver_seq is not None:
+            pico_receiver_seq_delta = int(receiver_seq - self._last_seen_receiver_seq)
+            pico_skipped_receiver_frames = int(max(0, pico_receiver_seq_delta - 1))
+        if receiver_seq is not None:
+            self._last_seen_receiver_seq = receiver_seq
 
         frame_age_ms: float | None = None
         pico_pc_rx_dt_ms: float | None = None
@@ -510,6 +521,9 @@ class FullTeleopApp:
                 command_target=command_target,
                 command_result=command_result,
                 pico_frame_new=pico_frame_new,
+                receiver_seq=receiver_seq,
+                pico_receiver_seq_delta=pico_receiver_seq_delta,
+                pico_skipped_receiver_frames=pico_skipped_receiver_frames,
                 frame_age_ms=frame_age_ms,
                 pico_pc_rx_dt_ms=pico_pc_rx_dt_ms,
                 pico_internal_dt_ms=pico_internal_dt_ms,
@@ -665,6 +679,9 @@ class FullTeleopApp:
         command_target: DualArmCommandTarget | None,
         command_result: dict[str, Any] | None,
         pico_frame_new: bool | None,
+        receiver_seq: int | None,
+        pico_receiver_seq_delta: int | None,
+        pico_skipped_receiver_frames: int | None,
         frame_age_ms: float | None,
         pico_pc_rx_dt_ms: float | None,
         pico_internal_dt_ms: float | None,
@@ -703,6 +720,9 @@ class FullTeleopApp:
             "pico_frame_id": frame_id,
             "frame_seq": frame_id,
             "pico_frame_new": pico_frame_new,
+            "pico_receiver_seq": receiver_seq,
+            "pico_receiver_seq_delta": pico_receiver_seq_delta,
+            "pico_skipped_receiver_frames": pico_skipped_receiver_frames,
             "frame_age_ms": frame_age_ms,
             "pico_pc_rx_dt_ms": pico_pc_rx_dt_ms,
             "pico_internal_dt_ms": pico_internal_dt_ms,

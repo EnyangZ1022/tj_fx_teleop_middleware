@@ -31,3 +31,4 @@ class TeleopFrame:
     start_pause_requested: bool
     cancel_requested: bool
     calibration_requested: bool
+    receiver_seq: int | None = None

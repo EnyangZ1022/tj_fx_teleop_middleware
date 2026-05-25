@@ -27,6 +27,7 @@ class PicoRawFrame:
     head_pose: Pose7
     left_ctrl: PicoControllerState
     right_ctrl: PicoControllerState
+    receiver_seq: int | None = None
 
     @property
     def left_valid(self) -> bool:

@@ -157,3 +157,22 @@ def test_axis_click_is_preserved_for_rising_edge_helper() -> None:
     assert mapped.left.axis_click is True
     assert mapped.right.axis_click is False
     assert mapped.calibration_requested is False
+
+
+def test_receiver_seq_is_propagated_to_teleop_frame() -> None:
+    mapper = PicoInputMapper()
+    frame = make_frame(frame_id=7)
+    frame = PicoRawFrame(
+        frame_id=frame.frame_id,
+        device_id=frame.device_id,
+        pico_timestamp_ns=frame.pico_timestamp_ns,
+        pc_receive_time_ns=frame.pc_receive_time_ns,
+        head_pose=frame.head_pose,
+        left_ctrl=frame.left_ctrl,
+        right_ctrl=frame.right_ctrl,
+        receiver_seq=42,
+    )
+
+    mapped = mapper.map_frame(frame)
+
+    assert mapped.receiver_seq == 42
