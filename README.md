@@ -526,3 +526,6 @@ python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --ena
 # 7. Both arms only after single-arm validation
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both
 ```
+
+# Latest recommended command
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both --max-runtime-s 300 --enable-orientation --joint-limit-mode ramp  --enable-win-high-res-timer --win-high-res-timer-ms 1 --disable-orientation-filter --control-mode joint_impedance --logging-mode full --pico-resample-mode predictive --ik-reference-mode last_sent --joint-ramp-profile balanced_100hz --safety-target-limit-mode clamp --safety-reacquire-mode position_offset --safety-reacquire-after-ms 1000 --safety-reacquire-error-mm 100
