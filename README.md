@@ -188,8 +188,14 @@ python scripts/robot_command_dry_run.py --robot-ip 192.168.1.190 --dry-run --sid
 
 ### Latest recommended command
 
+**Windows:**
 ```bash
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both --max-runtime-s 300 --enable-orientation --joint-limit-mode ramp --enable-win-high-res-timer --win-high-res-timer-ms 1 --disable-orientation-filter --control-mode joint_impedance --logging-mode full --pico-resample-mode predictive --ik-reference-mode last_sent --joint-ramp-profile balanced_100hz --safety-target-limit-mode clamp --safety-reacquire-mode position_offset --safety-reacquire-after-ms 1000 --safety-reacquire-error-mm 100
+```
+
+**Linux (Ubuntu 20.04/22.04):**
+```bash
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both --max-runtime-s 300 --enable-orientation --joint-limit-mode ramp --disable-orientation-filter --control-mode joint_impedance --logging-mode full --pico-resample-mode predictive --ik-reference-mode last_sent --joint-ramp-profile balanced_100hz --safety-target-limit-mode clamp --safety-reacquire-mode position_offset --safety-reacquire-after-ms 1000 --safety-reacquire-error-mm 100
 ```
 
 Safety behavior:
