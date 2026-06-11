@@ -99,7 +99,7 @@ These checks do not require PICO or robot hardware. They validate parsing, trans
 Recommended prerequisites:
 
 - PICO 4 Ultra
-- XRoboToolkit PICO APK installed in PICO
+- XRoboToolkit PICO APK (`assets/third_party/XRoboToolkit-PICO-1.1.1.apk`) installed on PICO
 - PICO and PC on the same network
 - Windows firewall allows Python networking
 
