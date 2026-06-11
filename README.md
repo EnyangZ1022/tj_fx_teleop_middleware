@@ -186,144 +186,48 @@ python scripts/robot_command_dry_run.py --robot-ip 192.168.1.190 --dry-run --sid
 
 ## 7. Full teleoperation app
 
-Main entrypoint:
+### Latest recommended command
 
 ```bash
-python scripts/run_full_teleop.py --help
-```
-
-PICO-only / no robot:
-
-```bash
-python scripts/run_full_teleop.py --no-robot --dry-run --ui
-```
-
-Real PICO + robot feedback, dry-run command path:
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui
-```
-
-This path:
-
-- receives PICO data
-- reads robot feedback
-- accepts calibration
-- generates and gates targets
-- runs scheduler
-- does not send robot commands
-
-### Real robot command sending
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both --max-runtime-s 300 --enable-orientation --joint-limit-mode ramp --enable-win-high-res-timer --win-high-res-timer-ms 1 --disable-orientation-filter --control-mode joint_impedance --logging-mode full --pico-resample-mode predictive --ik-reference-mode last_sent --joint-ramp-profile balanced_100hz --safety-target-limit-mode clamp --safety-reacquire-mode position_offset --safety-reacquire-after-ms 1000 --safety-reacquire-error-mm 100
 ```
 
 Safety behavior:
+- real send is disabled by default; `--enable-send` and `--confirm` are required
+- operator must type `YES` to proceed
+- `joint_impedance` real send requires `--move-to-ready`
 
-- real send is disabled by default
-- --enable-send is required
-- --confirm is required
-- operator must type YES
-
-Control mode selection:
+### Dry-run / no-robot modes
 
 ```bash
-# Default explicit form
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --control-mode joint_position
+# PICO-only (no robot SDK required)
+python scripts/run_full_teleop.py --no-robot --dry-run --ui
 
-# Optional impedance mode (MVP safety gate requires --move-to-ready for real send)
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --control-mode joint_impedance
+# PICO + robot feedback, no command sending
+python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui
 ```
 
-Unified joint-limit handling:
-
-```bash
-# Default safe behavior: reject oversized joint deltas
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --joint-limit-mode reject
-
-# Experimental behavior: ramp oversized IK jumps with unified step/velocity bound
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --joint-limit-mode ramp --max-joint-step-deg 1.6 --max-joint-velocity-deg-s 190
-```
-
-Notes:
-
-- `--joint-limit-mode reject` is the default.
-- `--joint-limit-mode ramp` computes `allowed_step_deg = min(max_joint_step_deg, max_joint_velocity_deg_s * dt_s)` and clips each joint delta into `[-allowed_step_deg, +allowed_step_deg]`.
-- ramp mode can trade exact instantaneous target tracking for smooth joint-space catch-up.
-- velocity dt is tracked per arm, so one arm send timing does not affect the other arm velocity check.
-
-`joint_impedance` safety rule in this MVP:
-
-- dry-run: allowed without `--move-to-ready`
-- real send (`--enable-send`): `--move-to-ready` is mandatory
-
-Single-arm selection:
+### Single-arm selection
 
 ```bash
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side left
 python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side right
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both
 ```
 
-Rate control:
+### Key options
 
-```bash
-# Preferred (stable machine): 100 Hz command loop
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --rate-hz 100 --spin-threshold-ms 0.5
+| Option | Values | Default | Notes |
+|--------|--------|---------|-------|
+| `--teleop-mode` | `position_only`, `position_orientation` | `position_only` | `--enable-orientation` is a shorthand for `position_orientation` |
+| `--control-mode` | `joint_position`, `joint_impedance` | `joint_position` | `joint_impedance` real send needs `--move-to-ready` |
+| `--joint-limit-mode` | `reject`, `ramp` | `reject` | `ramp` clips joint deltas by `min(max_step, max_velocity * dt)` |
+| `--pico-resample-mode` | `latest`, `predictive` | `latest` | predictive: causal position extrapolation only |
+| `--rate-hz` | `50`, `100` | — | 50 Hz fallback if 100 Hz is unstable |
+| `--disable-orientation-filter` | flag | off | disables SO(3) Slerp low-pass filter in `position_orientation` mode |
+| `--orientation-filter-tau` | float | `0.02` | higher = smoother with more lag |
+| `--enable-win-high-res-timer` | flag | off | Windows-only; improves scheduler precision |
 
-# Fallback (if 100 Hz is unstable): 50 Hz command loop
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --rate-hz 50 --spin-threshold-ms 0.5
-```
-
-Notes:
-
-- PICO input may be around 80-95 Hz depending on setup.
-- Command loop is fixed-rate and should typically run at 100 Hz or 50 Hz.
-- Use 50 Hz if 100 Hz is unstable on your system.
-- `--spin-threshold-ms` controls the short busy-spin window near each loop deadline (default `0.5`).
-- Set `--spin-threshold-ms 0` to disable spin and use pure `time.sleep` behavior.
-- Dual-arm feedback reads both sides from one SDK `subscribe` call per loop.
-- Dual-arm command send batches into one SDK packet (`clear_set` -> `set_joint_cmd_pose` x N -> `send_cmd`).
-
-### Optional Pico causal predictive resampler (default off)
-
-By default, Pico input uses latest-frame hold:
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --pico-resample-mode latest
-```
-
-Predictive mode is optional and low-latency. It performs short-horizon causal position extrapolation only (no future-frame interpolation, no fixed delay):
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --pico-resample-mode predictive --pico-extrapolation-horizon-ms 15 --pico-prediction-max-frame-age-ms 50 --pico-velocity-filter-beta 0.5 --pico-max-predicted-step-mm 5
-```
-
-Notes:
-
-- default mode is `--pico-resample-mode latest` and keeps existing behavior.
-- predictive mode never overwrites the real Pico receive timestamp used by stale checks.
-- predictive mode predicts controller position only; orientation and discrete button/trigger/grip states are latest-hold.
-- safety gate behavior is unchanged and still applies stale timeout and motion checks.
-
-### Optional Windows high-resolution timer
-
-On Windows, command loop timing can be affected by system timer granularity.
-For real robot tests, you can optionally enable a high-resolution timer:
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --joint-limit-mode ramp --max-joint-step-deg 1.6 --max-joint-velocity-deg-s 190 --enable-win-high-res-timer --win-high-res-timer-ms 1
-```
-
-Notes:
-
-- this feature is optional and disabled by default
-- it uses Windows `timeBeginPeriod` / `timeEndPeriod` through Python `ctypes`
-- it is a no-op on Linux/macOS
-- Linux users do not need this option
-- it may improve `time.sleep` / scheduler precision on Windows
-- it does not replace safety limits or command-loop diagnostics
+Use `python scripts/run_full_teleop.py --help` to see all options.
 
 ## 8. How to operate teleoperation
 
@@ -345,52 +249,7 @@ Important behavior:
 - axisClick captures controller reference pose and robot FK feedback anchor.
 - default mode is position_only: position follows relative controller displacement while end-effector orientation stays frozen at calibration orientation.
 - trigger is not the motion-enable signal.
-
-Experimental orientation mode (explicit opt-in only):
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --teleop-mode position_orientation --orientation-algorithm absolute_matrix
-```
-
-Orientation filter behavior in orientation mode:
-
-- quaternion/SO(3) Slerp low-pass filter is enabled by default
-- filter is applied to controller quaternion before quaternion-to-rotation-matrix conversion
-- xyz position is not filtered
-- filter is ignored in position_only mode
-- default parameters: `tau_s=0.02`, `fallback_dt_s=0.01`, `reset_on_calibration=true`
-
-Shorthand:
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --enable-orientation
-```
-
-Disable orientation filter for A/B comparison:
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --disable-orientation-filter
-```
-
-Increase smoothing:
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --teleop-mode position_orientation --orientation-filter-tau 0.03
-```
-
-Fallback algorithm (legacy relative path):
-
-```bash
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui --teleop-mode position_orientation --orientation-algorithm relative_rotvec
-```
-
-Orientation math notes:
-
-- default `absolute_matrix` mode computes `R_abs_now` from controller quaternion through fixed frame maps, then applies calibration continuity offset:
-	- `R_offset = R_robot_anchor @ R_abs_anchor.T`
-	- `R_target = R_offset @ R_abs_now`
-- all clamps/limits are applied on SO(3) using matrix/quaternion composition, not direct abc arithmetic.
-- orientation filter tuning: `tau_s=0.02` is responsive and lightly smoothed; `0.03~0.04` is smoother with more lag.
+- Orientation tracking (`position_orientation`): `absolute_matrix` is the default algorithm. Orientation filter (SO(3) Slerp, `tau_s=0.02` default) is applied to controller quaternion before rotation-matrix conversion. Use `--disable-orientation-filter` to bypass. `--enable-orientation` is shorthand for `--teleop-mode position_orientation`.
 
 ## 9. Diagnostic UI
 
@@ -495,37 +354,3 @@ IK failure:
 - docs/ui_visualization_notes.md: UI behavior and configuration
 - docs/full_teleop_app_notes.md: full app runtime notes
 - docs/orientation_tracking_notes.md: experimental orientation tracking mode
-
-## 14. Suggested first real-hardware run order
-
-```bash
-# 1. Offline checks
-pytest -q
-python -m compileall src scripts tests
-python scripts/check_coordinate_mapping.py
-python scripts/check_stage6_pipeline_dry.py
-
-# 2. PICO only
-python scripts/test_pico_frequency.py
-python scripts/inspect_pico_live.py
-
-# 3. Robot read-only
-python scripts/read_robot_feedback_once.py --robot-ip 192.168.1.190
-
-# 4. Ready pose
-python scripts/move_robot_to_ready_pose.py --robot-ip 192.168.1.190 --dry-run
-python scripts/move_robot_to_ready_pose.py --robot-ip 192.168.1.190
-
-# 5. Full app dry-run
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --dry-run --ui
-
-# 6. Real send, single arm first
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side left
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side right
-
-# 7. Both arms only after single-arm validation
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both
-```
-
-# Latest recommended command
-python scripts/run_full_teleop.py --robot-ip 192.168.1.190 --move-to-ready --enable-send --confirm --ui --side both --max-runtime-s 300 --enable-orientation --joint-limit-mode ramp  --enable-win-high-res-timer --win-high-res-timer-ms 1 --disable-orientation-filter --control-mode joint_impedance --logging-mode full --pico-resample-mode predictive --ik-reference-mode last_sent --joint-ramp-profile balanced_100hz --safety-target-limit-mode clamp --safety-reacquire-mode position_offset --safety-reacquire-after-ms 1000 --safety-reacquire-error-mm 100
