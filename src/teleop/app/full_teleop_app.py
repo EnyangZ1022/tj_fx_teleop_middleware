@@ -688,6 +688,36 @@ class FullTeleopApp:
                     if feedback is not None and feedback.right is not None
                     else None
                 ),
+                "feedback_left_q_deg": (
+                    list(feedback.left.q_deg)
+                    if feedback is not None and feedback.left is not None and feedback.left.q_deg is not None
+                    else None
+                ),
+                "feedback_right_q_deg": (
+                    list(feedback.right.q_deg)
+                    if feedback is not None and feedback.right is not None and feedback.right.q_deg is not None
+                    else None
+                ),
+                "feedback_left_qd_deg_s": (
+                    list(feedback.left.qd_deg_s)
+                    if feedback is not None and feedback.left is not None and feedback.left.qd_deg_s is not None
+                    else None
+                ),
+                "feedback_right_qd_deg_s": (
+                    list(feedback.right.qd_deg_s)
+                    if feedback is not None and feedback.right is not None and feedback.right.qd_deg_s is not None
+                    else None
+                ),
+                "feedback_left_tau": (
+                    list(feedback.left.tau)
+                    if feedback is not None and feedback.left is not None and feedback.left.tau is not None
+                    else None
+                ),
+                "feedback_right_tau": (
+                    list(feedback.right.tau)
+                    if feedback is not None and feedback.right is not None and feedback.right.tau is not None
+                    else None
+                ),
                 "command_left_q_deg": command_result.get("left_q_deg") if command_result is not None else None,
                 "command_right_q_deg": command_result.get("right_q_deg") if command_result is not None else None,
                 "command_left_candidate_q_deg": (

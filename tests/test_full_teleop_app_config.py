@@ -149,8 +149,8 @@ def test_enable_send_forces_non_dry_run() -> None:
 def test_safety_config_uses_mm_field_names_and_defaults() -> None:
     cfg = SafetyConfig()
 
-    assert cfg.max_single_step_mm == 50.0
-    assert cfg.max_velocity_mm_s == 500.0
+    assert cfg.max_single_step_mm == 220.0
+    assert cfg.max_velocity_mm_s == 2200.0
     assert cfg.target_limit_mode == "reject"
     assert cfg.reacquire_mode == "none"
     assert cfg.reacquire_after_ms == 1000.0

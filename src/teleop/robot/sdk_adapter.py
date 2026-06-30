@@ -167,6 +167,18 @@ class RobotSDKReadOnlyAdapter:
         outputs: list[Any],
         side_norm: str,
     ) -> tuple[float, float, float, float, float, float, float]:
+        q_deg, _, _ = self._extract_joint_feedback_with_optional_signals_from_outputs(outputs, side_norm)
+        return q_deg
+
+    def _extract_joint_feedback_with_optional_signals_from_outputs(
+        self,
+        outputs: list[Any],
+        side_norm: str,
+    ) -> tuple[
+        tuple[float, float, float, float, float, float, float],
+        tuple[float, float, float, float, float, float, float] | None,
+        tuple[float, float, float, float, float, float, float] | None,
+    ]:
         arm = self._config.left_arm if side_norm == "left" else self._config.right_arm
         idx = sdk_arm_to_index(arm)
 
@@ -181,12 +193,53 @@ class RobotSDKReadOnlyAdapter:
         if not isinstance(q, list) or len(q) != 7:
             raise RuntimeError(f"Invalid joint feedback for side={side_norm}")
 
-        return tuple(float(v) for v in q)
+        q_values = tuple(float(v) for v in q)
+        q_deg = (
+            q_values[0],
+            q_values[1],
+            q_values[2],
+            q_values[3],
+            q_values[4],
+            q_values[5],
+            q_values[6],
+        )
+
+        qd_deg_s: tuple[float, float, float, float, float, float, float] | None = None
+        qd = side_output.get("fb_joint_vel")
+        if isinstance(qd, list) and len(qd) == 7:
+            qd_values = tuple(float(v) for v in qd)
+            qd_deg_s = (
+                qd_values[0],
+                qd_values[1],
+                qd_values[2],
+                qd_values[3],
+                qd_values[4],
+                qd_values[5],
+                qd_values[6],
+            )
+
+        tau: tuple[float, float, float, float, float, float, float] | None = None
+        torque = side_output.get("fb_joint_sToq")
+        if isinstance(torque, list) and len(torque) == 7:
+            tau_values = tuple(float(v) for v in torque)
+            tau = (
+                tau_values[0],
+                tau_values[1],
+                tau_values[2],
+                tau_values[3],
+                tau_values[4],
+                tau_values[5],
+                tau_values[6],
+            )
+
+        return q_deg, qd_deg_s, tau
 
     def _arm_feedback_from_joint_q(
         self,
         side_norm: str,
         q_deg: tuple[float, float, float, float, float, float, float],
+        qd_deg_s: tuple[float, float, float, float, float, float, float] | None = None,
+        tau: tuple[float, float, float, float, float, float, float] | None = None,
     ) -> RobotArmFeedback:
         if side_norm == "left":
             if self.left_kine is None or not self.left_kine.is_initialized:
@@ -201,6 +254,9 @@ class RobotSDKReadOnlyAdapter:
             position_xyz=(float(xyzabc[0]), float(xyzabc[1]), float(xyzabc[2])),
             orientation_abc=(float(xyzabc[3]), float(xyzabc[4]), float(xyzabc[5])),
             valid=True,
+            q_deg=q_deg,
+            qd_deg_s=qd_deg_s,
+            tau=tau,
         )
 
     def get_arm_feedback(self, side: str) -> RobotArmFeedback:
@@ -208,17 +264,18 @@ class RobotSDKReadOnlyAdapter:
         if side_norm not in {"left", "right"}:
             raise ValueError("side must be 'left' or 'right'")
 
-        q_deg = self.get_joint_feedback(side_norm)
-        return self._arm_feedback_from_joint_q(side_norm, q_deg)
+        outputs = self._subscribe_outputs()
+        q_deg, qd_deg_s, tau = self._extract_joint_feedback_with_optional_signals_from_outputs(outputs, side_norm)
+        return self._arm_feedback_from_joint_q(side_norm, q_deg, qd_deg_s=qd_deg_s, tau=tau)
 
     def get_dual_arm_feedback(self) -> DualArmRobotFeedback:
         # Stage 6A policy: if one side fails, raise RuntimeError rather than returning partial data.
         outputs = self._subscribe_outputs()
-        left_q = self._extract_joint_feedback_from_outputs(outputs, "left")
-        right_q = self._extract_joint_feedback_from_outputs(outputs, "right")
+        left_q, left_qd, left_tau = self._extract_joint_feedback_with_optional_signals_from_outputs(outputs, "left")
+        right_q, right_qd, right_tau = self._extract_joint_feedback_with_optional_signals_from_outputs(outputs, "right")
 
-        left = self._arm_feedback_from_joint_q("left", left_q)
-        right = self._arm_feedback_from_joint_q("right", right_q)
+        left = self._arm_feedback_from_joint_q("left", left_q, qd_deg_s=left_qd, tau=left_tau)
+        right = self._arm_feedback_from_joint_q("right", right_q, qd_deg_s=right_qd, tau=right_tau)
         return DualArmRobotFeedback(left=left, right=right)
 
 

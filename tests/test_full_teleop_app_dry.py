@@ -114,6 +114,43 @@ class _FakeSDKAdapter:
         )
 
 
+class _FakeSDKAdapterWithJointFeedback(_FakeSDKAdapter):
+    def get_dual_arm_feedback(self) -> DualArmRobotFeedback:
+        return DualArmRobotFeedback(
+            left=RobotArmFeedback(
+                position_xyz=(1000.0, 2000.0, 3000.0),
+                orientation_abc=(10.0, 20.0, 30.0),
+                q_deg=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
+                qd_deg_s=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7),
+                tau=(2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7),
+                valid=True,
+            ),
+            right=RobotArmFeedback(
+                position_xyz=(1200.0, 2200.0, 3200.0),
+                orientation_abc=(40.0, 50.0, 60.0),
+                q_deg=(11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0),
+                qd_deg_s=(1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7),
+                tau=(3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7),
+                valid=True,
+            ),
+        )
+
+
+class _FakeSDKAdapterLeftOnly(_FakeSDKAdapter):
+    def get_dual_arm_feedback(self) -> DualArmRobotFeedback:
+        return DualArmRobotFeedback(
+            left=RobotArmFeedback(
+                position_xyz=(1000.0, 2000.0, 3000.0),
+                orientation_abc=(10.0, 20.0, 30.0),
+                q_deg=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0),
+                qd_deg_s=(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7),
+                tau=(2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7),
+                valid=True,
+            ),
+            right=None,
+        )
+
+
 class _FakeCommandAdapter:
     def __init__(self, dry_run: bool):
         self.dry_run = bool(dry_run)
@@ -438,6 +475,12 @@ def test_timing_logging_mode_emits_lightweight_timing_record() -> None:
         "feedback_left_abc_deg",
         "feedback_right_xyz_mm",
         "feedback_right_abc_deg",
+        "feedback_left_q_deg",
+        "feedback_right_q_deg",
+        "feedback_left_qd_deg_s",
+        "feedback_right_qd_deg_s",
+        "feedback_left_tau",
+        "feedback_right_tau",
         "command_left_q_deg",
         "command_right_q_deg",
         "command_left_candidate_q_deg",
@@ -446,6 +489,138 @@ def test_timing_logging_mode_emits_lightweight_timing_record() -> None:
         "command_right_sent_q_deg",
     }
     assert forbidden_keys.isdisjoint(set(timing_payload.keys()))
+
+
+def test_full_logging_mode_includes_joint_feedback_fields() -> None:
+    cfg = FullTeleopAppConfig(connect_pico=True, connect_robot=True, dry_run=True, logging_enabled=True)
+    provider = _FakeTeleopProvider([
+        _frame(frame_id=1, now_ns=1_000_000_000, left_axis_click=False, right_axis_click=False),
+    ])
+    sdk = _FakeSDKAdapterWithJointFeedback()
+    cmd = _FakeCommandAdapter(dry_run=True)
+    spy_logger = _SpyLogger()
+    logging_cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="full",
+        record_events=False,
+        record_frames=True,
+        record_performance=False,
+        record_timing=False,
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        sdk_adapter=sdk,
+        command_adapter=cmd,
+        logging_config=logging_cfg,
+        logger=spy_logger,
+    )
+
+    app.initialize()
+    app.step_once(1_010_000_000)
+    app.shutdown()
+
+    assert len(spy_logger.frames) >= 1
+    frame_event, payload = spy_logger.frames[-1]
+    assert frame_event == "teleop_step"
+    assert payload is not None
+
+    assert payload.get("feedback_left_q_deg") == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+    assert payload.get("feedback_right_q_deg") == pytest.approx([11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0])
+    assert payload.get("feedback_left_qd_deg_s") == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7])
+    assert payload.get("feedback_right_qd_deg_s") == pytest.approx([1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7])
+    assert payload.get("feedback_left_tau") == pytest.approx([2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7])
+    assert payload.get("feedback_right_tau") == pytest.approx([3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7])
+
+    assert payload.get("feedback_left_xyz_mm") == pytest.approx([1000.0, 2000.0, 3000.0])
+    assert payload.get("feedback_right_xyz_mm") == pytest.approx([1200.0, 2200.0, 3200.0])
+
+
+def test_full_logging_mode_joint_feedback_fields_are_none_when_feedback_missing() -> None:
+    cfg = FullTeleopAppConfig(connect_pico=True, connect_robot=False, dry_run=True, logging_enabled=True)
+    provider = _FakeTeleopProvider([
+        _frame(frame_id=1, now_ns=1_000_000_000, left_axis_click=False, right_axis_click=False),
+    ])
+    spy_logger = _SpyLogger()
+    logging_cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="full",
+        record_events=False,
+        record_frames=True,
+        record_performance=False,
+        record_timing=False,
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        logging_config=logging_cfg,
+        logger=spy_logger,
+    )
+
+    app.initialize()
+    app.step_once(1_010_000_000)
+    app.shutdown()
+
+    assert len(spy_logger.frames) >= 1
+    _, payload = spy_logger.frames[-1]
+    assert payload is not None
+
+    assert payload.get("feedback_left_q_deg") is None
+    assert payload.get("feedback_right_q_deg") is None
+    assert payload.get("feedback_left_qd_deg_s") is None
+    assert payload.get("feedback_right_qd_deg_s") is None
+    assert payload.get("feedback_left_tau") is None
+    assert payload.get("feedback_right_tau") is None
+
+    assert payload.get("feedback_left_xyz_mm") is None
+    assert payload.get("feedback_right_xyz_mm") is None
+
+
+def test_full_logging_mode_joint_feedback_fields_handle_missing_side() -> None:
+    cfg = FullTeleopAppConfig(connect_pico=True, connect_robot=True, dry_run=True, logging_enabled=True)
+    provider = _FakeTeleopProvider([
+        _frame(frame_id=1, now_ns=1_000_000_000, left_axis_click=False, right_axis_click=False),
+    ])
+    sdk = _FakeSDKAdapterLeftOnly()
+    cmd = _FakeCommandAdapter(dry_run=True)
+    spy_logger = _SpyLogger()
+    logging_cfg = LoggingConfig(
+        enabled=True,
+        logging_mode="full",
+        record_events=False,
+        record_frames=True,
+        record_performance=False,
+        record_timing=False,
+    )
+
+    app = FullTeleopApp(
+        config=cfg,
+        teleop_provider=provider,
+        sdk_adapter=sdk,
+        command_adapter=cmd,
+        logging_config=logging_cfg,
+        logger=spy_logger,
+    )
+
+    app.initialize()
+    app.step_once(1_010_000_000)
+    app.shutdown()
+
+    assert len(spy_logger.frames) >= 1
+    _, payload = spy_logger.frames[-1]
+    assert payload is not None
+
+    assert payload.get("feedback_left_q_deg") == pytest.approx([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+    assert payload.get("feedback_left_qd_deg_s") == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7])
+    assert payload.get("feedback_left_tau") == pytest.approx([2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7])
+    assert payload.get("feedback_right_q_deg") is None
+    assert payload.get("feedback_right_qd_deg_s") is None
+    assert payload.get("feedback_right_tau") is None
+
+    assert payload.get("feedback_left_xyz_mm") == pytest.approx([1000.0, 2000.0, 3000.0])
+    assert payload.get("feedback_right_xyz_mm") is None
 
 
 def test_app_command_config_uses_control_mode_and_rate() -> None:

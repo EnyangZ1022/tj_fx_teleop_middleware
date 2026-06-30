@@ -133,6 +133,22 @@ class _FakeRobotDistinctPerSubscribe(_FakeRobotBase):
         }
 
 
+class _FakeRobotWithJointSignals(_FakeRobotBase):
+    def subscribe(self, dcss):
+        payload = super().subscribe(dcss)
+        _ = dcss
+        outputs = payload.get("outputs")
+        if isinstance(outputs, list) and len(outputs) >= 2:
+            outputs[0]["fb_joint_vel"] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]
+            outputs[1]["fb_joint_vel"] = [1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7]
+            outputs[0]["fb_joint_sToq"] = [2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7]
+            outputs[1]["fb_joint_sToq"] = [3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7]
+            # This is current feedback and must not be used as torque.
+            outputs[0]["fb_joint_cToq"] = [20.1, 20.2, 20.3, 20.4, 20.5, 20.6, 20.7]
+            outputs[1]["fb_joint_cToq"] = [30.1, 30.2, 30.3, 30.4, 30.5, 30.6, 30.7]
+        return payload
+
+
 class _FakeMarvinKine:
     def __init__(self):
         self.load_calls: list[tuple[int, str]] = []
@@ -322,6 +338,27 @@ def test_get_arm_feedback_returns_mm_deg(monkeypatch) -> None:
     assert feedback.position_xyz == pytest.approx((100.0, 200.0, 300.0))
     assert feedback.orientation_abc == pytest.approx((10.0, 20.0, 30.0))
     assert feedback.valid is True
+
+
+def test_get_dual_arm_feedback_extracts_joint_pos_vel_and_torque_from_sToq(monkeypatch) -> None:
+    _install_fake_fx_robot(monkeypatch, _FakeRobotWithJointSignals)
+    _install_fake_fx_kine(monkeypatch)
+
+    adapter = RobotSDKReadOnlyAdapter(RobotSDKConfig(connect_check_samples=3, connect_check_interval_s=0.0, connect_settle_s=0.0))
+    adapter.connect()
+
+    dual_feedback = adapter.get_dual_arm_feedback()
+
+    assert dual_feedback.left is not None
+    assert dual_feedback.right is not None
+    assert dual_feedback.left.q_deg == pytest.approx((1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0))
+    assert dual_feedback.right.q_deg == pytest.approx((11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0))
+    assert dual_feedback.left.qd_deg_s == pytest.approx((0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7))
+    assert dual_feedback.right.qd_deg_s == pytest.approx((1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7))
+    assert dual_feedback.left.tau == pytest.approx((2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7))
+    assert dual_feedback.right.tau == pytest.approx((3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7))
+    assert dual_feedback.left.tau != pytest.approx((20.1, 20.2, 20.3, 20.4, 20.5, 20.6, 20.7))
+    assert dual_feedback.right.tau != pytest.approx((30.1, 30.2, 30.3, 30.4, 30.5, 30.6, 30.7))
 
 
 def test_get_dual_arm_feedback_returns_both_sides(monkeypatch) -> None:

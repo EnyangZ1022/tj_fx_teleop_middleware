@@ -8,11 +8,18 @@ Vec3 = tuple[float, float, float]
 
 @dataclass(frozen=True)
 class RobotArmFeedback:
-    """Current end-effector feedback in SDK units (position mm, orientation deg)."""
+    """Current arm feedback in SDK units.
+
+    End-effector feedback uses mm/deg. Optional joint feedback uses deg/deg_s and
+    raw SDK torque feedback values.
+    """
 
     position_xyz: Vec3
     orientation_abc: Vec3
     valid: bool = True
+    q_deg: tuple[float, ...] | None = None
+    qd_deg_s: tuple[float, ...] | None = None
+    tau: tuple[float, ...] | None = None
 
 
 @dataclass(frozen=True)
